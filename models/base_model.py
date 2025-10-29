@@ -1,3 +1,20 @@
+from abc import ABC, abstractmethod
+
+
+class BaseModel(ABC):
+    def __init__(self, env, stations, analyzer, rng):
+        self.env = env
+        self.stations = stations
+        self.analyzer = analyzer
+        self.rng = rng
+
+
+    @abstractmethod
+    def serve_customer(self, customer):
+        pass
+
+
+# ===================== FILE: models/ros_model.py =====================
 from .base_model import BaseModel
 
 

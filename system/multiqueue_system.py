@@ -1,66 +1,47 @@
 import simpy
-from typing import Dict
-from system.queue_system_factory import create_queue
-from system.validation_analyzer import ValidationAnalyzer
+import random
+from base_queue_system import BaseQueueSystem
+from factory import QueueSystemFactory
+from analysis import Analysis
+from customer import Customer
+from models.ros_model import ROSModel
 
-class MultiQueueSystem:
-    def __init__(self, env, config):
-        self.env = env
-        self.config = config
-        self.stations: Dict[str, BaseQueueSystem] = {}
-        self.validators = []
 
-        self.global_pool = None
-        if config.get("dynamic_shared"):
-            self.global_pool = simpy.Resource(env, capacity=config["total_servers"])
+class MultiQueueSystem(BaseQueueSystem):
+    """System where each station behaves like an independent queue (own arrival stream).
 
-        for name, cfg in config["stations"].items():
-            servers = self.global_pool if cfg["discipline"] == "DYNAMIC" else simpy.Resource(env, capacity=cfg["c"])
-            extra = {"all_stations": self.stations} if cfg["discipline"] == "DYNAMIC" else {}
-            q = create_queue(
-                discipline=cfg["discipline"],
-                env=env,
-                servers=servers,
-                avg_service_rate=1 / cfg["service_time"],
-                capacity_K=cfg.get("K"),
-                **extra
-            )
-            self.stations[name] = q
-            q.start()
 
-    def generate_arrivals(self, gate: int):
-        lambda_ = self.config["arrival_rates"][gate]
-        matrix = self.config["prob_matrices"][gate]
-        while True:
-            yield self.env.timeout(random.expovariate(lambda_))
-            cust_type = random.choices(list(self.config["customer_types"].keys()), weights=list(self.config["customer_types"].values()))[0]
-            serve_time = 1.0  # Base, adjust by type
-            if cust_type == "indulgent":
-                serve_time *= 2
-            # Add other type adjustments
-            cust = Customer(self.env, self.env.now, serve_time, gate, matrix, cust_type)
-            self.env.process(self.route_customer(cust))
+    This class launches one arrival generator per station by default.
+    """
+    def __init__(self, env, station_configs, arrival_rates=None, seed=None, policy='ROS'):
+        super().__init__(env, station_configs, seed=seed)
+        self.rng = random.Random(seed)
+        self.analyzer = Analysis()
+        self.stations = {
+        name: QueueSystemFactory.make_station(name, env, c=conf.get('c',1), K=conf.get('K',float('inf')), avg_service_time=conf.get('avg',1.0), rng=self.rng)
+        for name, conf in station_configs.items()
+        }
+        self.arrival_rates = arrival_rates or {name:0.5 for name in self.stations}
+        # select model
+        if policy == 'ROS':
+            self.model = ROSModel(env, self.stations, self.analyzer, self.rng)
+        else:
+            from models.base_model import BaseModel
+            self.model = ROSModel(env, self.stations, self.analyzer, self.rng)
 
-    def route_customer(self, cust: 'Customer'):
-        visited = set()
-        while True:
-            station = cust.choose_station(self.stations.keys(), visited)
-            if station is None:
-                break
-            visited.add(station)
-            self.stations[station].arrive(cust)
-            # Wait for service to complete (since serve is in background)
-            yield self.env.timeout(0)  # Placeholder, actual service is async
-
-        self.config["analysis"].record_exit(self.env.now, cust)
-
-    def run(self, until: float):
-        for g in (0, 1):
-            self.env.process(self.generate_arrivals(g))
+    def run(self, until=100):
+        # start generator per station
+        for name in self.stations:
+            self.env.process(self._gen_for_station(name))
         self.env.run(until=until)
+        self.analyzer.print_report()
 
-        for name, q in self.stations.items():
-            cfg = self.config["stations"][name]
-            v = ValidationAnalyzer(q, sum(self.config["arrival_rates"]), 1/cfg["service_time"], cfg["c"], cfg.get("K"))
-            self.validators.append(v)
-            v.report()
+    def _gen_for_station(self, station_name):
+        rate = self.arrival_rates.get(station_name, 0.5)
+        while True:
+            ia = self.rng.expovariate(rate)
+            yield self.env.timeout(ia)
+            c = Customer(arrival_gate=0, env=self.env)
+            self.analyzer.record_arrival(c)
+            # route customer to the station's model
+            self.model.serve_customer(c)

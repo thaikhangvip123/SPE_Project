@@ -1,16 +1,20 @@
+from classes.food_station import FoodStation
 
-from typing import Type, Dict
-from models.ros_model import ROSQueue
-from models.sjf_model import SJFQueue
-# from .dynamic import DynamicQueue
 
-_FACTORY: Dict[str, Type[BaseQueueSystem]] = {
-    "ROS": ROSQueue,
-    "SJF": SJFQueue,
-    "DYNAMIC": DynamicQueue,
-}
+class QueueSystemFactory:
+    """Factory that creates FoodStation objects and systems."""
+    @staticmethod
+    def make_station(name, env, **kwargs):
+        return FoodStation(name, env, **kwargs)
 
-def create_queue(discipline: str, env, servers, avg_service_rate,
-                 capacity_K=None, **extra):
-    cls = _FACTORY[discipline.upper()]
-    return cls(env, servers, avg_service_rate, capacity_K, **extra)
+
+    @staticmethod
+    def make_system(system_type, env, station_configs, **kwargs):
+        if system_type == 'single':
+            from classes.buffet_system import BuffetSystem
+            return BuffetSystem(env, station_configs, **kwargs)
+        elif system_type == 'multi':
+            from system.multiqueue_system import MultiQueueSystem
+            return MultiQueueSystem(env, station_configs, **kwargs)
+        else:
+            raise ValueError(f"Unknown system_type={system_type}")

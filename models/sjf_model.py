@@ -1,10 +1,18 @@
-from system.base_queue_system import BaseQueueSystem
+from .base_model import BaseModel
 
-class SJFQueue(BaseQueueSystem):
-    STARVATION_THRESHOLD = 30.0
 
-    def _select_next(self) -> 'Customer':
-        def key(c: 'Customer'):
-            starvation = (self.env.now - c.arrival_time) > self.STARVATION_THRESHOLD
-            return (c.serve_time, 0 if starvation else (self.env.now - c.arrival_time))
-        return min(self.waiting, key=key)
+class SJFModel(BaseModel):
+    def serve_customer(self, customer):
+        def proc():
+            # choose smallest avg_service_time station
+            name = min(self.stations.keys(), key=lambda k: self.stations[k].avg_service_time)
+            station = self.stations[name]
+            res = yield station.request_service(customer)
+            if not res:
+                self.analyzer.record_blocked(customer, self.env.now)
+                return
+            wait, service_time = res
+            self.analyzer.record_wait(customer, wait)
+            self.analyzer.record_service(customer, service_time)
+            self.analyzer.record_departure(customer, self.env.now)
+        return self.env.process(proc())

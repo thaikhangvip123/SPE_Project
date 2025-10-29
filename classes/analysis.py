@@ -1,6 +1,5 @@
 import statistics
 
-
 class Analysis:
     def __init__(self):
         self.arrivals = 0
