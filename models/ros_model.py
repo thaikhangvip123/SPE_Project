@@ -4,7 +4,6 @@ from .base_model import BaseModel
 class ROSModel(BaseModel):
     """
     Random Order Serving (ROS): Phục vụ khách hàng theo thứ tự ngẫu nhiên.
-    
     Logic:
     1. Chọn quầy ngẫu nhiên (dựa trên routing_mode và probability matrices)
     2. Yêu cầu phục vụ tại quầy đó
