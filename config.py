@@ -2,7 +2,7 @@
 
 # === GLOBAL SETTINGS ===
 SEED = 100           # random seed for reproducibility
-SIM_TIME = 200      # total simulation time (time units)
+SIM_TIME = 200000      # total simulation time (time units)
 
 # === ARRIVAL RATES (λ) ===
 # Each gate or queue line's arrival rate
