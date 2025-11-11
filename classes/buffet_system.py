@@ -1,168 +1,181 @@
+# classes/buffet_system.py
 import simpy
 import random
-from system.queue_system_factory import QueueSystemFactory
-from classes.analysis import Analysis
-from classes.customer import Customer
-from models.ros_model import ROSModel
-from models.sjf_model import SJFModel
-from models.dynamic_server import DynamicServerModel
-from system.base_queue_system import BaseQueueSystem
-from utils.customer_utils import select_customer_type
+from .customer import Customer
+from .food_station import FoodStation
+from .analysis import Analysis
+from core.queue_system_factory import QueueSystemFactory
 
+class BuffetSystem:
+    """
+    Đây là bộ não của toàn bộ mô phỏng. 
+    Chứa logic chính, điều khiển luồng thời gian và quản lý các thành phần. [cite: 198]
+    """
+    def __init__(self, env: simpy.Environment, analyzer: Analysis, config):
+        self.env = env                 # [cite: 200]
+        self.analyzer = analyzer       # [cite: 204]
+        self.config = config           # File config (sẽ tạo sau)
+        
+        self.stations = {}             # Dict chứa các đối tượng FoodStation 
+        self.arrival_rates = config.ARRIVAL_RATES # 
+        self.prob_matrices = config.PROB_MATRICES # 
 
-class BuffetSystem(BaseQueueSystem):
-    """
-    Hệ thống mô phỏng nhà hàng buffet với nhiều quầy thức ăn.
-    
-    Thuộc tính chính:
-    - env: Môi trường SimPy quản lý thời gian và sự kiện
-    - stations: Dictionary chứa tất cả các FoodStation
-    - arrival_rates: Tốc độ khách đến từ mỗi cổng (λ0, λ1)
-    - prob_matrices: Ma trận xác suất chọn quầy dựa trên cổng vào
-    - analyzer: Đối tượng Analysis để ghi nhận số liệu
-    """
-    def __init__(self, env, station_configs, arrival_rates=(0.5,0.5), seed=None, policy='ROS', 
-                 customer_type_distribution=None, customer_base_service=1.0,
-                 probability_matrices=None, routing_mode='random', continue_probability=0.4):
-        super().__init__(env, station_configs, seed=seed)
-        self.rng = random.Random(seed)
-        self.analyzer = Analysis()
+        # Khởi tạo Factory
+        self.factory = QueueSystemFactory()
         
-        # Tạo các quầy thức ăn (FoodStation) từ cấu hình
-        self.stations = {
-            name: QueueSystemFactory.make_station(name, env, c=conf.get('c',1), K=conf.get('K',float('inf')), avg_service_time=conf.get('avg',1.0), rng=self.rng)
-            for name, conf in station_configs.items()
-        }
-        
-        self.arrival_rates = arrival_rates  # Tốc độ đến từ mỗi cổng
-        self.customer_type_distribution = customer_type_distribution or {'normal': 1.0}
-        self.customer_base_service = customer_base_service
-        
-        # Ma trận xác suất: {gate_id: {station_name: probability}}
-        self.prob_matrices = probability_matrices or {}
-        self.routing_mode = routing_mode  # 'random', 'shortest_wait', 'one_liner'
-        self.continue_probability = continue_probability  # Xác suất tiếp tục đến quầy khác
-        
-        # Tạo danh sách thứ tự quầy cho chế độ one_liner
-        self.station_order = list(station_configs.keys())
-        
-        # Chọn mô hình phục vụ dựa trên policy
-        # Truyền reference đến buffet_system để models có thể gọi routing methods
-        if policy == 'ROS':
-            self.model = ROSModel(env, self.stations, self.analyzer, self.rng, 
-                                prob_matrices=self.prob_matrices, routing_mode=self.routing_mode,
-                                continue_probability=self.continue_probability, station_order=self.station_order,
-                                buffet_system=self)
-        elif policy == 'SJF':
-            from config import STARVATION_THRESHOLD
-            self.model = SJFModel(env, self.stations, self.analyzer, self.rng,
-                                prob_matrices=self.prob_matrices, routing_mode=self.routing_mode,
-                                continue_probability=self.continue_probability, station_order=self.station_order,
-                                buffet_system=self, starvation_threshold=STARVATION_THRESHOLD)
-        elif policy == 'DYNAMIC':
-            self.model = DynamicServerModel(env, self.stations, self.analyzer, self.rng,
-                                          prob_matrices=self.prob_matrices, routing_mode=self.routing_mode,
-                                          continue_probability=self.continue_probability, station_order=self.station_order,
-                                          buffet_system=self)
-        else:
-            raise ValueError('Unknown policy')
-    
-    def random_choose(self, customer):
-        """
-        Chọn quầy thức ăn ngẫu nhiên dựa trên ma trận xác suất.
-        
-        Args:
-            customer: Đối tượng Customer
+        # Khởi tạo các FoodStation
+        for name, cfg in config.STATIONS.items():
             
-        Returns:
-            str: Tên quầy được chọn, hoặc None nếu không có quầy nào khả dụng
+            # 1. Dùng Factory tạo ra mô hình (FCFS, SJF...)
+            model = self.factory.create_queue_model(
+                env=env,
+                config=cfg,
+                analyzer=analyzer,
+                station_name=name
+            )
+            
+            # 2. Tạo FoodStation và tiêm model vào
+            self.stations[name] = FoodStation(
+                env=env,
+                name=name,
+                capacity_K=cfg['capacity_K'],
+                analyzer=analyzer,
+                discipline_model=model # Tiêm model vào
+            )
+
+            # Ghi nhận station với analyzer
+            self.analyzer.add_station(name)
+
+    def generate_customers(self, gate_id):
         """
-        gate = customer.arrival_gate
+        Một "tiến trình" SimPy chạy song song. [cite: 207]
+        Nó tạo ra khách hàng mới theo phân phối Poisson (exponential inter-arrival). 
+        """
+        arrival_rate = self.arrival_rates[gate_id] # (lambda)
         
+        while True:
+            # 1. Tính thời gian chờ cho khách tiếp theo
+            inter_arrival_time = random.expovariate(arrival_rate)
+            yield self.env.timeout(inter_arrival_time)
+            
+            # 2. Tạo khách hàng
+            customer_id = self.analyzer.total_arrivals
+            self.analyzer.record_arrival() # [cite: 171]
+            
+            # Tạo service times ngẫu nhiên cho khách này (cho SJF)
+            customer_service_times = {}
+            for station, base_time in self.config.DEFAULT_SERVICE_TIMES.items():
+                # Giả định thời gian của khách dao động 50%-150% so với trung bình
+                customer_service_times[station] = random.uniform(base_time * 0.5, base_time * 1.5)
+
+            new_customer = Customer(
+                id=customer_id,
+                arrival_gate=gate_id,
+                arrival_time=self.env.now,
+                customer_type='normal',
+                patience_time=self.config.DEFAULT_PATIENCE_TIME,
+                service_times=customer_service_times
+            )
+            # Thêm thuộc tính 'reneged'
+            new_customer.reneged = False 
+
+            self.env.process(self.customer_lifecycle(new_customer))
+
+    def customer_lifecycle(self, customer: Customer):
+        """
+        Định nghĩa toàn bộ hành trình của một khách hàng. 
+        Dựa trên Luồng hoạt động cốt lõi (Trang 10). 
+        """
+        
+        # 1. Lựa chọn Ban đầu 
+        station_name = self.choose_initial_section(customer.arrival_gate)
+        
+        visited_stations = set()
+
+        while station_name is not None:
+            # if station_name in visited_stations:
+            #     # Đơn giản hóa: Nếu khách chọn lại quầy đã thăm, họ sẽ
+            #     # chọn lại hành động tiếp theo. 
+            #     station_name = self.choose_next_action(customer, visited_stations)
+            #     continue
+
+            # 2. Phục vụ tại Quầy [cite: 273]
+            if station_name not in self.stations:
+                print(f"Lỗi: Khách hàng {customer.id} chọn quầy không tồn tại: {station_name}")
+                break # Thoát khỏi vòng lặp
+
+            station = self.stations[station_name]
+            visited_stations.add(station_name)
+            
+            yield self.env.process(station.serve(customer))
+            
+            if customer.reneged:
+                break
+
+            # 3. Lựa chọn tiếp theo 
+            station_name = self.choose_next_action(customer, visited_stations)
+        
+        # 4. Rời đi [cite: 280]
+        system_time = self.env.now - customer.arrival_time
+        self.analyzer.record_exit(system_time)
+
+    def choose_initial_section(self, gate_id):
+        """
+        Chọn quầy đầu tiên dựa trên ma trận xác suất của cổng vào. 
+        """
         # Lấy ma trận xác suất cho cổng này
-        if gate in self.prob_matrices:
-            probs = self.prob_matrices[gate]
-        else:
-            # Nếu không có ma trận, chọn ngẫu nhiên đều
-            available = [s for s in self.stations.keys() if not customer.has_visited(s)]
-            if not available:
-                return None
-            return self.rng.choice(available)
+        prob_map = self.prob_matrices['initial'][gate_id]
         
-        # Lọc các quầy chưa được thăm (cho indulgent customers)
-        available_stations = {s: p for s, p in probs.items() 
-                            if s in self.stations and not customer.has_visited(s)}
+        # Lấy list các quầy và xác suất tương ứng
+        stations = list(prob_map.keys())
+        probs = list(prob_map.values())
+        
+        # Trả về một lựa chọn dựa trên trọng số xác suất
+        return random.choices(stations, weights=probs, k=1)[0]
+
+    def choose_next_action(self, customer: Customer, visited_stations: set):
+        """
+        Quyết định: (a) đi lấy thêm đồ hay (b) ra về. [cite: 277, 278]
+        """
+        # Quyết định: Lấy thêm hay Về? (Hình 2 [cite: 118])
+        prob_map = self.prob_matrices['next_action']
+        action = random.choices(
+            list(prob_map.keys()), 
+            weights=list(prob_map.values()), 
+            k=1
+        )[0]
+        
+        if action == 'Exit':
+            return None # [cite: 280]
+        
+        prob_map_transition = self.prob_matrices['transition']
+        
+        available_stations = []
+        available_probs = []
+        
+        for station, prob in prob_map_transition.items():
+            if station not in visited_stations:
+                available_stations.append(station)
+                available_probs.append(prob)
         
         if not available_stations:
-            return None
-        
-        # Chọn ngẫu nhiên dựa trên xác suất
-        rand = self.rng.random()
-        cumulative = 0.0
-        total_prob = sum(available_stations.values())
-        
-        for station, prob in available_stations.items():
-            cumulative += prob / total_prob
-            if rand <= cumulative:
-                return station
-        
-        return list(available_stations.keys())[-1]
-    
-    def shortest_expected_wait(self, customer):
-        """
-        Khách hàng quan sát các quầy và chọn quầy có ít người nhất.
-        
-        Args:
-            customer: Đối tượng Customer
-            
-        Returns:
-            str: Tên quầy có ít khách nhất, hoặc None
-        """
-        available = [s for s in self.stations.keys() 
-                     if not customer.has_visited(s) and self.stations[s].can_enter()]
-        
-        if not available:
-            return None
-        
-        # Chọn quầy có ít khách nhất trong hệ thống
-        return min(available, key=lambda s: self.stations[s].customers_in_system())
-    
-    def one_liner(self, customer):
-        """
-        Khách hàng đi qua tất cả các quầy theo thứ tự định sẵn.
-        Mỗi quầy chỉ được thăm một lần.
-        
-        Args:
-            customer: Đối tượng Customer
-            
-        Returns:
-            str: Quầy tiếp theo trong thứ tự, hoặc None nếu đã thăm hết
-        """
-        # Tìm quầy đầu tiên chưa được thăm
-        for station_name in self.station_order:
-            if not customer.has_visited(station_name):
-                return station_name
-        return None
+            return None # Không còn quầy nào để đi
 
+        # Chuẩn hóa lại xác suất
+        total_prob = sum(available_probs)
+        normalized_probs = [p / total_prob for p in available_probs]
+        
+        return random.choices(available_stations, weights=normalized_probs, k=1)[0]
 
-    def run(self, until=100, util_time=None):
-        # Support both parameter names for compatibility
-        if util_time is not None:
-            until = util_time
-        self.env.process(self.generate_customers())
-        self.env.run(until=until)
-        self.analyzer.print_report()
-
-    def generate_customers(self):
-        total_rate = sum(self.arrival_rates)
-        while True:
-            ia = self.rng.expovariate(total_rate)
-            yield self.env.timeout(ia)
-            p = self.rng.random() * total_rate
-            gate = 0 if p < self.arrival_rates[0] else 1
-            # Select customer type based on distribution
-            customer_type = select_customer_type(self.rng, self.customer_type_distribution)
-            c = Customer(gate, self.env, customer_type=customer_type, base_service=self.customer_base_service)
-            self.analyzer.record_arrival(c)
-            # delegate to model
-            self.model.serve_customer(c)
+    def run(self, until_time):
+        """
+        Phương thức khởi động. 
+        """
+        # Khởi chạy các generator cho từng cổng 
+        for gate_id in self.arrival_rates.keys():
+            self.env.process(self.generate_customers(gate_id))
+        
+        # Chạy mô phỏng cho đến mốc thời gian
+        print(f"--- Bắt đầu mô phỏng (Until={until_time}) ---")
+        self.env.run(until=until_time)
+        print("--- Kết thúc mô phỏng ---")

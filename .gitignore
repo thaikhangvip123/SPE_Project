@@ -1,4 +1,1 @@
-*.venv/
 *__pycache__
-.env
-FIXES_EXPLANATION.md
