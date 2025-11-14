@@ -87,18 +87,18 @@ class Analysis:
 
     def print_report(self):
         """Định dạng và in kết quả đã tính. """
-        print("--- BÁO CÁO MÔ PHỎNG ---")
-        print(f"Tổng số khách đến: {self.total_arrivals}")
-        print(f"Tổng số khách thoát: {self.total_exits}")
-        print(f"Tổng số khách bỏ về (Balked - hết chỗ K): {self.total_balked}")
-        print(f"Tổng số khách bỏ về (Reneged - mất kiên nhẫn): {self.total_reneged}")
+        print("--- BAO CAO MO PHONG ---")
+        print(f"Tong so khach den: {self.total_arrivals}")
+        print(f"Tong so khach thoat: {self.total_exits}")
+        print(f"Tong so khach bo ve (Balked - het cho K): {self.total_balked}")
+        print(f"Tong so khach bo ve (Reneged - mat kien nhan): {self.total_reneged}")
         
-        print(f"\nThời gian trung bình trong hệ thống: {self.avg_system_time:.2f}")
+        print(f"\nThoi gian trung binh trong he thong: {self.avg_system_time:.2f}")
         
-        print("\nThời gian chờ trung bình tại quầy:")
+        print("\nThoi gian cho trung binh tai quay:")
         for station, time in self.avg_wait_time_per_station.items():
             print(f"  - {station:<10}: {time:.2f}")
 
-        print("\nXác suất bị chặn (Balking):")
+        print("\nXac suat bi chan (Balking):")
         for station, prob in self.blocking_probability_per_station.items():
             print(f"  - {station:<10}: {prob:.2%}")

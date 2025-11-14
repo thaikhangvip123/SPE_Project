@@ -11,18 +11,18 @@ UNTIL_TIME = 1000.0
 
 # (ASSUMED) Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
-    0: 5.0,  # Cổng "Arrived 0"
-    1: 3.0   # Cổng "Arrived 1"
+    0: 3.0,  # Cổng "Arrived 0"
+    1: 2.0   # Cổng "Arrived 1"
 }
 
 # (ASSUMED) Thời gian kiên nhẫn mặc định
-DEFAULT_PATIENCE_TIME = 15.0 # Khách sẽ rời hàng đợi nếu chờ quá 15 phút
+DEFAULT_PATIENCE_TIME = 10.0 # Khách sẽ rời hàng đợi nếu chờ quá 15 phút
 
 # (ASSUMED) Thời gian phục vụ (lấy thức ăn) trung bình cho 1 khách
 # tại các quầy. Dùng để sinh ngẫu nhiên service time cho SJF.
 DEFAULT_SERVICE_TIMES = {
-    'Meat': 4.0,
-    'Seafood': 5.0,
+    'Meat': 2.0,
+    'Seafood': 2.0,
     'Dessert': 2.0,
     'Fruit': 1.5
 }
@@ -31,39 +31,36 @@ DEFAULT_SERVICE_TIMES = {
 # Dựa trên Hình 1 (trang 4) và Hình 2 (trang 6)
 STATIONS = {
     'Meat': {
-        'servers': 10,             # 5 Tongs
+        'servers': 10,            # 10 Tongs
         'capacity_K': 10,         # (ASSUMED) Giới hạn không gian
         'discipline': 'SJF',      # SJF
-        'avg_service_time': 4.0   # (ASSUMED) 
+        'avg_service_time': 3.0   # (ASSUMED) 
     },
     'Seafood': {
-        'servers': 5,             # 7 Tongs
+        'servers': 5,             # 5 Tongs
         'capacity_K': 10,         # (ASSUMED)
         'discipline': 'SJF',      # SJF
-        'avg_service_time': 5.0   # (ASSUMED)
+        'avg_service_time': 3.0   # (ASSUMED)
     },
     'Dessert': {
         'servers': 7,             # 7 Ladle
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'ROS',      # ROS
+        'discipline': 'SJF',      # ROS
         'avg_service_time': 2.0   # (ASSUMED)
     },
     'Fruit': {
-        'servers':7,            # Grab by hand (ASSUMED = 10)
+        'servers':7,              # Grab by hand (ASSUMED = 7)
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'ROS',      # ROS
-        'avg_service_time': 1.5   # (ASSUMED)
+        'discipline': 'SJF',      # ROS
+        'avg_service_time': 3.0   # (ASSUMED)
     }
 }
 
 """
 Ma trận xác suất (Dựa trên Hình 2, trang 6)
 
-LƯU Ý: Hình 2 có vẻ mâu thuẫn. Các xác suất từ
-"More section" (0.4, 0.3, 0.3) cộng lại bằng 1.0, 
-không chừa chỗ cho "Exit" hoặc "Dessert".
 
-Do đó, tớ TẠM GIẢ ĐỊNH logic như sau:
+Do đó, GIẢ ĐỊNH logic như sau:
 1. 'initial': Xác suất chọn quầy đầu tiên (dựa trên Hình 2).
 2. 'next_action': Xác suất chọn "Lấy thêm" (More) hoặc "Về" (Exit).
 3. 'transition': Xác suất chọn quầy tiếp theo, NẾU đã chọn "More".
@@ -75,8 +72,8 @@ PROB_MATRICES = {
         0: {
             'Meat': 0.4,      #
             'Seafood': 0.3,   #
-            'Dessert': 0.15,  #
-            'Fruit': 0.15     #
+            'Dessert': 0.2,  #
+            'Fruit': 0.2     #
         },
         # Cổng 1
         1: {

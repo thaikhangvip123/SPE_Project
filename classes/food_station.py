@@ -43,6 +43,7 @@ class FoodStation:
 
         if get_space_req not in results:
             # Hết kiên nhẫn khi chờ K (Balking)
+            customer.reneged = True
             self.analyzer.record_blocking_event(self.name) 
             return # Khách hàng rời đi
 

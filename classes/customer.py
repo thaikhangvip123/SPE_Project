@@ -22,6 +22,7 @@ class Customer:
         # --- Thuộc tính theo dõi trạng thái ---
         self.current_station = None          # Quầy hiện tại khách đang ở
         self.start_wait_time = 0.0           # Thời điểm bắt đầu chờ (để tính wait time)
+        self.served_event = None             # Sự kiện để server báo cho customer
 
     def __str__(self):
         """Hàm hỗ trợ cho việc logging, in ra ID khách hàng."""

@@ -176,6 +176,6 @@ class BuffetSystem:
             self.env.process(self.generate_customers(gate_id))
         
         # Chạy mô phỏng cho đến mốc thời gian
-        print(f"--- Bắt đầu mô phỏng (Until={until_time}) ---")
+        print(f"--- Bat dau mo phong (Until={until_time}) ---")
         self.env.run(until=until_time)
-        print("--- Kết thúc mô phỏng ---")
+        print("--- Ket thuc mo phong ---")

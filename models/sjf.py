@@ -1,125 +1,217 @@
 # models/sjf.py
+"""
+MÔ HÌNH HÀNG ĐỢI SJF (Shortest Job First - Công việc ngắn nhất trước)
+
+SJF ưu tiên phục vụ khách có thời gian phục vụ ngắn nhất trước.
+Điều này giúp giảm thời gian chờ trung bình, nhưng có thể gây "starvation"
+(khách có service time dài bị chờ quá lâu).
+
+LUỒNG HOẠT ĐỘNG:
+1. Khách đến → Thêm vào priority queue (sắp xếp theo service_time)
+2. Server manager chọn khách có service_time ngắn nhất
+3. Nếu khách chờ quá lâu (starvation) → Ưu tiên phục vụ
+4. Phục vụ khách → Trả server về pool
+5. Lặp lại
+
+KHÁC BIỆT VỚI FCFS:
+- FCFS: Dùng SimPy.Resource (tự động quản lý FIFO)
+- SJF: Quản lý thủ công với priority queue (heapq) để chọn khách ưu tiên
+"""
 import simpy
 import random
-import heapq # Dùng hàng đợi ưu tiên (priority queue)
+import heapq  # Dùng hàng đợi ưu tiên (priority queue - min-heap)
 from core.base_queue_system import BaseQueueSystem
 from classes.customer import Customer
 
-# (ASSUMED) Ngưỡng thời gian chờ để chống starvation 
-STARVATION_THRESHOLD = 10.0 # 10 phút
+# Ngưỡng thời gian chờ để chống starvation (chống đói)
+# Nếu khách chờ quá 10 phút → Ưu tiên phục vụ (bất kể service_time)
+STARVATION_THRESHOLD = 10.0  # 10 phút
 
 class SJFModel(BaseQueueSystem):
     """
-    Hiện thực hàng đợi SJF (Shortest Job First)[cite: 100].
-    Quản lý server thủ công để chọn khách hàng và chống starvation.
+    Hiện thực hàng đợi SJF (Shortest Job First - Công việc ngắn nhất trước).
+    
+    Quản lý server thủ công để:
+    1. Chọn khách có service_time ngắn nhất (SJF)
+    2. Chống starvation (ưu tiên khách chờ quá lâu)
+    
+    KHÁC BIỆT VỚI FCFS:
+    - FCFS: SimPy.Resource tự động quản lý (FIFO)
+    - SJF: Quản lý thủ công với priority queue + server manager
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        # Dùng Container để đếm số server rảnh
+        # Dùng Container (thay vì Resource) để quản lý server thủ công
+        # Container cho phép lấy/trả server một cách linh hoạt
+        # capacity: Tổng số server, init: Số server ban đầu (tất cả đều rảnh)
         self.servers = simpy.Container(self.env, capacity=self.num_servers, init=self.num_servers)
         
-        # Dùng Priority Queue (min-heap) để lưu khách hàng
-        # (priority, arrival_time, customer)
+        # Priority Queue (min-heap) để lưu khách hàng chờ
+        # Mỗi phần tử: (priority, arrival_time, customer)
+        # - priority = service_time (ưu tiên service_time ngắn nhất)
+        # - arrival_time: Thời điểm đến (để chống starvation)
+        # - customer: Đối tượng khách hàng
+        # heapq là min-heap → Phần tử nhỏ nhất ở đầu (service_time ngắn nhất)
         self.wait_list = [] 
         
-        # Sự kiện để đánh thức 'server_manager'
+        # Sự kiện để đánh thức 'server_manager' khi có khách mới đến
+        # Khi khách đến, trigger event này để server_manager biết có khách mới
         self.customer_arrival = self.env.event() 
-
-        # Chạy tiến trình quản lý server
+        
+        # Chạy tiến trình quản lý server (chạy nền - daemon process)
+        # Process này chạy liên tục, chọn khách và phân phối server
         self.env.process(self.server_manager())
 
     def serve(self, customer: Customer):
         """
         Khách hàng đến, tự thêm mình vào hàng đợi ưu tiên và chờ.
+        
+        LUỒNG:
+        1. Lấy service_time của khách (để xác định độ ưu tiên)
+        2. Thêm vào priority queue (sắp xếp theo service_time)
+        3. Đánh thức server_manager (có khách mới)
+        4. Tạo event riêng cho khách này (để server_manager thông báo khi được phục vụ)
+        5. Chờ: được phục vụ HOẶC hết thời gian kiên nhẫn
+        6. Nếu hết kiên nhẫn → Reneging
         """
+        # Lấy service_time của khách này tại quầy hiện tại
+        # Service_time xác định độ ưu tiên (service_time ngắn = ưu tiên cao)
         service_time = customer.service_times.get(
-            self.station_name, self.avg_service_time
+            self.station_name,  # Tên quầy (Meat, Seafood, ...)
+            self.avg_service_time  # Nếu không có, dùng thời gian trung bình
         )
         
-        # Thêm khách vào hàng đợi ưu tiên
-        # (service_time là độ ưu tiên, arrival_time để chống 'equal priority' bug)
+        # Thêm khách vào priority queue (min-heap)
+        # Format: (priority, arrival_time, customer)
+        # - priority = service_time (ưu tiên service_time ngắn nhất)
+        # - arrival_time = env.now (thời điểm đến, để chống starvation)
+        # - customer: Đối tượng khách hàng
         heapq.heappush(self.wait_list, (service_time, self.env.now, customer))
         
-        # Đánh thức server manager
+        # Đánh thức server_manager (nếu đang chờ khách mới)
+        # Nếu event chưa được trigger → Trigger để server_manager biết có khách mới
         if not self.customer_arrival.triggered:
             self.customer_arrival.succeed()
 
-        # Chờ... (Reneging logic)
-        # Tạo một sự kiện riêng cho khách này để chờ
-        customer_served_or_reneged = self.env.event()
+        # ========== TẠO SỰ KIỆN RIÊNG CHO KHÁCH NÀY ==========
+        # Mỗi khách có một event riêng
+        # Khi server_manager chọn khách này để phục vụ, sẽ trigger event này
+        # Khách chờ event này được trigger (được phục vụ)
+        customer.served_event = self.env.event()
         
-        results = yield customer_served_or_reneged | self.env.timeout(customer.patience_time)
+        # ========== CHỜ: ĐƯỢC PHỤC VỤ HOẶC HẾT KIÊN NHẪN ==========
+        # Chờ: customer.served_event (được phục vụ) HOẶC timeout (hết kiên nhẫn)
+        # | : Toán tử OR trong SimPy - chờ một trong hai sự kiện xảy ra trước
+        results = yield customer.served_event | self.env.timeout(customer.patience_time)
         
-        if customer_served_or_reneged not in results:
-            # Khách hàng HẾT KIÊN NHẪN (Reneging)
+        # ========== KIỂM TRA KẾT QUẢ ==========
+        if customer.served_event not in results:
+            # customer.served_event không có trong results → timeout xảy ra trước
+            # Khách đã chờ quá lâu mà vẫn chưa được phục vụ → Reneging
             self.analyzer.record_reneging_event()
-            # Phải xóa khách này khỏi hàng đợi (cực kỳ phức tạp)
-            # Đơn giản hóa: Đánh dấu 'reneged'
-            customer.reneged = True # Thêm 1 thuộc tính mới
-            
-            # Ghi nhận thời gian chờ
+            customer.reneged = True  # Đánh dấu khách đã rời đi
             wait_time = self.env.now - customer.start_wait_time
             self.analyzer.record_wait_time(self.station_name, wait_time)
+
+        # Dọn dẹp: Xóa event (không cần thiết nữa)
+        customer.served_event = None
 
 
     def server_manager(self):
         """
         Process chạy nền (daemon) để quản lý các server.
+        
+        Process này chạy liên tục, thực hiện:
+        1. Chờ khách đến (nếu hàng đợi rỗng)
+        2. Tìm khách ưu tiên (SJF hoặc bị starvation)
+        3. Lấy server rảnh
+        4. Phục vụ khách (chạy process con)
+        5. Lặp lại
+        
+        KHÁC BIỆT VỚI FCFS:
+        - FCFS: SimPy.Resource tự động quản lý (không cần process này)
+        - SJF: Cần process này để chọn khách ưu tiên thủ công
         """
         while True:
+            # ========== BƯỚC 1: Kiểm tra hàng đợi ==========
             if not self.wait_list:
-                # Hàng đợi rỗng, chờ khách đến
+                # Hàng đợi rỗng, chờ khách mới đến
+                # Chờ event customer_arrival (khi có khách mới đến sẽ trigger)
                 yield self.customer_arrival
-                self.customer_arrival = self.env.event() # Reset event
+                self.customer_arrival = self.env.event()  # Reset event để dùng lần sau
+                continue  # Quay lại đầu vòng lặp để kiểm tra lại
 
-            # Hàng đợi có khách, chờ server rảnh
-            yield self.servers.get(1) # Chờ 1 server
-            
-            # Lấy khách hàng
+            # ========== BƯỚC 2: Tìm khách ưu tiên ==========
+            # Tìm khách có service_time ngắn nhất HOẶC bị starvation
             customer = self.find_customer_to_serve()
             if not customer:
-                # Khách hàng duy nhất đã 'reneged', trả server
-                yield self.servers.put(1)
-                continue # Quay lại đầu vòng lặp
+                # Không tìm thấy khách hợp lệ (có thể tất cả đã reneged)
+                # Chờ khách mới đến
+                yield self.customer_arrival
+                self.customer_arrival = self.env.event()  # Reset event
+                continue
 
-            # Khởi chạy 1 process con để phục vụ khách này
+            # ========== BƯỚC 3: Lấy server rảnh ==========
+            # Chờ cho đến khi có ít nhất 1 server rảnh
+            # servers.get(1): Lấy 1 server từ pool (giảm số server rảnh đi 1)
+            yield self.servers.get(1)
+            
+            # ========== BƯỚC 4: Phục vụ khách ==========
+            # Khởi chạy process con để phục vụ khách này
+            # Process này sẽ:
+            # - Ghi nhận wait_time
+            # - Thông báo cho khách (trigger customer.served_event)
+            # - Phục vụ (chờ service_time)
+            # - Trả server về pool
             self.env.process(self.run_service(customer))
+
 
     def find_customer_to_serve(self):
         """
-        Logic cốt lõi của SJF + Starvation
+        Logic cốt lõi của SJF + Starvation (chống đói).
+        
+        Tìm khách để phục vụ theo thứ tự ưu tiên:
+        1. Khách bị starvation (chờ quá lâu) → Ưu tiên cao nhất
+        2. Khách có service_time ngắn nhất (SJF) → Ưu tiên thứ hai
+        
+        LƯU Ý: Logic hiện tại đơn giản hóa - chỉ kiểm tra starvation cho khách đầu queue.
+        Logic đầy đủ cần duyệt toàn bộ queue để tìm khách bị starvation nặng nhất.
         """
         while self.wait_list:
+            # Lấy khách đầu priority queue (có service_time ngắn nhất)
+            # heappop: Lấy và xóa phần tử nhỏ nhất (min-heap)
             (service_time, arrival_time, customer) = heapq.heappop(self.wait_list)
             
-            # Kiểm tra xem khách đã 'reneged' trong lúc chờ chưa
+            # ========== Kiểm tra khách đã reneged chưa ==========
+            # Nếu khách đã rời đi (hết kiên nhẫn) → Bỏ qua, tìm khách khác
             if hasattr(customer, 'reneged') and customer.reneged:
-                continue # Bỏ qua khách này
+                continue  # Bỏ qua khách này, lấy khách tiếp theo
 
-            # Kiểm tra Starvation 
+            # ========== Kiểm tra Starvation (chống đói) ==========
+            # Tính thời gian khách đã chờ
             wait_time = self.env.now - arrival_time
+            
             if wait_time > STARVATION_THRESHOLD:
-                # Khách này đã chờ quá lâu -> ưu tiên
+                # Khách này đã chờ quá lâu (> 10 phút) → Ưu tiên phục vụ
+                # Bất kể service_time dài hay ngắn, khách chờ quá lâu sẽ được ưu tiên
+                # Điều này ngăn chặn starvation (khách bị chờ vô hạn)
                 return customer
                 
-            # Kiểm tra xem có ai chờ lâu hơn (starved) không
-            # (Phải duyệt/heapq không hỗ trợ) -> Đơn giản hóa:
-            # Nếu khách SJF chưa bị 'starved', ta ưu tiên SJF.
-            # Logic chống starvation phức tạp hơn cần duyệt toàn bộ list.
-            # Tạm thời: ưu tiên SJF
-            
-            # Tạm thời trả lại khách (nếu logic phức tạp hơn)
-            # heapq.heappush(self.wait_list, (service_time, arrival_time, customer))
-            # ... tìm người bị starved ...
-            
-            # Logic đơn giản:
-            # 1. Ưu tiên ai bị starved
-            # (tạm bỏ qua vì heapq phức tạp)
-            # 2. Lấy SJF
+            # ========== Logic SJF (nếu chưa bị starvation) ==========
+            # Nếu khách này chưa bị starvation, kiểm tra xem có khách nào khác
+            # bị starvation nặng hơn không.
+            # 
+            # LƯU Ý: Logic hiện tại đơn giản hóa - chỉ kiểm tra khách đầu queue.
+            # Logic đầy đủ cần:
+            # 1. Duyệt toàn bộ queue để tìm khách bị starvation nặng nhất
+            # 2. Nếu có → Ưu tiên khách đó
+            # 3. Nếu không → Ưu tiên SJF (khách hiện tại có service_time ngắn nhất)
+            #
+            # Tạm thời: Ưu tiên SJF (khách hiện tại)
             return customer
             
-        return None # Không tìm thấy khách hợp lệ
+        return None  # Không tìm thấy khách hợp lệ (hàng đợi rỗng hoặc tất cả đã reneged)
 
 
     def run_service(self, customer: Customer):
