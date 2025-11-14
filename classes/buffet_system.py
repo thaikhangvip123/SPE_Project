@@ -77,47 +77,46 @@ class BuffetSystem:
                 service_times=customer_service_times
             )
             # Thêm thuộc tính 'reneged'
-            new_customer.reneged = False 
+            # new_customer.reneged = False 
 
             self.env.process(self.customer_lifecycle(new_customer))
 
     def customer_lifecycle(self, customer: Customer):
         """
-        Định nghĩa toàn bộ hành trình của một khách hàng. 
-        Dựa trên Luồng hoạt động cốt lõi (Trang 10). 
+        Hành trình của khách hàng (Sửa lỗi đếm trùng).
         """
         
-        # 1. Lựa chọn Ban đầu 
         station_name = self.choose_initial_section(customer.arrival_gate)
-        
         visited_stations = set()
 
         while station_name is not None:
-            # if station_name in visited_stations:
-            #     # Đơn giản hóa: Nếu khách chọn lại quầy đã thăm, họ sẽ
-            #     # chọn lại hành động tiếp theo. 
-            #     station_name = self.choose_next_action(customer, visited_stations)
-            #     continue
-
-            # 2. Phục vụ tại Quầy [cite: 273]
-            if station_name not in self.stations:
-                print(f"Lỗi: Khách hàng {customer.id} chọn quầy không tồn tại: {station_name}")
-                break # Thoát khỏi vòng lặp
+            if station_name in visited_stations:
+                station_name = self.choose_next_action(customer, visited_stations)
+                continue
 
             station = self.stations[station_name]
             visited_stations.add(station_name)
             
             yield self.env.process(station.serve(customer))
             
+            # Nếu khách đã 'reneged', dừng hành trình ngay
             if customer.reneged:
-                break
+                break # Thoát khỏi vòng lặp 'while'
 
-            # 3. Lựa chọn tiếp theo 
             station_name = self.choose_next_action(customer, visited_stations)
         
-        # 4. Rời đi [cite: 280]
-        system_time = self.env.now - customer.arrival_time
-        self.analyzer.record_exit(system_time)
+        # --- LOGIC SỬA LỖI ---
+        # Kiểm tra xem vòng lặp 'while' kết thúc
+        # là do 'break' (reneged) hay do 'station_name = None' (exit)
+        
+        if customer.reneged:
+            # Khách hàng này đã bỏ về (reneged)
+            # Chúng ta KHÔNG ghi nhận 'exit'
+            pass 
+        else:
+            # Khách hàng này thoát thành công
+            system_time = self.env.now - customer.arrival_time
+            self.analyzer.record_exit(system_time)
 
     def choose_initial_section(self, gate_id):
         """

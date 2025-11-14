@@ -11,20 +11,20 @@ UNTIL_TIME = 1000.0
 
 # (ASSUMED) Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
-    0: 3.0,  # Cổng "Arrived 0"
-    1: 2.0   # Cổng "Arrived 1"
+    0: 0.15,  # Cổng "Arrived 0"
+    1: 0.1   # Cổng "Arrived 1"
 }
 
 # (ASSUMED) Thời gian kiên nhẫn mặc định
-DEFAULT_PATIENCE_TIME = 10.0 # Khách sẽ rời hàng đợi nếu chờ quá 15 phút
+DEFAULT_PATIENCE_TIME = 15.0 # Khách sẽ rời hàng đợi nếu chờ quá 15 phút
 
 # (ASSUMED) Thời gian phục vụ (lấy thức ăn) trung bình cho 1 khách
 # tại các quầy. Dùng để sinh ngẫu nhiên service time cho SJF.
 DEFAULT_SERVICE_TIMES = {
     'Meat': 2.0,
     'Seafood': 2.0,
-    'Dessert': 2.0,
-    'Fruit': 1.5
+    'Dessert': 2.5,
+    'Fruit':2.5
 }
 
 # Cấu hình các quầy thức ăn (Stations)
@@ -34,25 +34,25 @@ STATIONS = {
         'servers': 10,            # 10 Tongs
         'capacity_K': 10,         # (ASSUMED) Giới hạn không gian
         'discipline': 'SJF',      # SJF
-        'avg_service_time': 3.0   # (ASSUMED) 
+        'avg_service_time': 0.5   # (ASSUMED) 
     },
     'Seafood': {
         'servers': 5,             # 5 Tongs
         'capacity_K': 10,         # (ASSUMED)
         'discipline': 'SJF',      # SJF
-        'avg_service_time': 3.0   # (ASSUMED)
+        'avg_service_time': 0.4   # (ASSUMED)
     },
     'Dessert': {
         'servers': 7,             # 7 Ladle
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'SJF',      # ROS
-        'avg_service_time': 2.0   # (ASSUMED)
+        'discipline': 'ROS',      # ROS
+        'avg_service_time': 0.3   # (ASSUMED)
     },
     'Fruit': {
         'servers':7,              # Grab by hand (ASSUMED = 7)
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'SJF',      # ROS
-        'avg_service_time': 3.0   # (ASSUMED)
+        'discipline': 'ROS',      # ROS
+        'avg_service_time': 0.2   # (ASSUMED)
     }
 }
 
