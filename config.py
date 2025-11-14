@@ -2,7 +2,7 @@
 
 # === GLOBAL SETTINGS ===
 SEED = 100           # random seed for reproducibility
-SIM_TIME = 200000      # total simulation time (time units)
+SIM_TIME = 2000      # total simulation time (time units)
 
 # === ARRIVAL RATES (λ) ===
 # Each gate or queue line's arrival rate
@@ -44,7 +44,7 @@ PROBABILITY_MATRICES = {
 # 'random': random_choose() - choose station randomly
 # 'shortest_wait': shortest_expected_wait() - choose station with fewest customers
 # 'one_liner': one_liner() - visit all stations in sequence
-ROUTING_MODE = 'random'
+ROUTING_MODE = 'one_liner'
 
 # === CONTINUE PROBABILITY ===
 # Probability that customer continues to another station after being served
@@ -82,7 +82,7 @@ STATION_CONFIGS = {
 
 # === POLICY / QUEUE MODEL ===
 # Choose from: 'ROS', 'SJF', 'DYNAMIC'
-POLICY = 'SJF'
+POLICY = 'ROS'
 
 # === SYSTEM TYPE ===
 # Choose 'single' for BuffetSystem or 'multi' for MultiQueueSystem
