@@ -96,8 +96,13 @@ class Analysis:
         print(f"\nThoi gian trung binh trong he thong: {self.avg_system_time:.2f}")
         
         print("\nThoi gian cho trung binh tai quay:")
-        for station, time in self.avg_wait_time_per_station.items():
-            print(f"  - {station:<10}: {time:.2f}")
+        # In tất cả stations, kể cả không có wait time
+        all_stations = set(self.wait_times.keys()) | set(self.total_attempts_per_station.keys())
+        for station in sorted(all_stations):
+            time = self.avg_wait_time_per_station.get(station, 0.0)
+            attempts = self.total_attempts_per_station.get(station, 0)
+            wait_count = len(self.wait_times.get(station, []))
+            print(f"  - {station:<10}: {time:.2f} (attempts: {attempts}, wait_records: {wait_count})")
 
         print("\nXac suat bi chan (Balking):")
         for station, prob in self.blocking_probability_per_station.items():

@@ -82,6 +82,31 @@ class SJFModel(BaseQueueSystem):
             self.avg_service_time  # Nếu không có, dùng thời gian trung bình
         )
         
+        # Áp dụng logic customer types:
+        # - 'indulgent': Nhân đôi serve_time
+        if customer.customer_type == 'indulgent':
+            service_time *= 2.0
+        
+        # - 'erratic': Tăng service_time cho khách sau (đang chờ)
+        # Lưu ý: Logic erratic - khi erratic customer vào queue,
+        # các khách đang chờ sẽ có service_time tăng thêm
+        if customer.customer_type == 'erratic':
+            import config
+            erratic_delay = getattr(config, 'ERRATIC_DELAY_AMOUNT', 0.2)
+            # Tăng service_time cho tất cả khách đang chờ trong wait_list
+            for i, (prio, arr_time, waiting_customer) in enumerate(self.wait_list):
+                if hasattr(waiting_customer, 'service_times'):
+                    station_time = waiting_customer.service_times.get(
+                        self.station_name,
+                        self.avg_service_time
+                    )
+                    waiting_customer.service_times[self.station_name] = (
+                        station_time + erratic_delay
+                    )
+                    # Cập nhật lại priority trong queue (nếu cần)
+                    # Lưu ý: Không cần cập nhật priority vì đây là SJF,
+                    # priority dựa trên service_time ban đầu khi vào queue
+        
         # Thêm khách vào priority queue (min-heap)
         # Format: (priority, arrival_time, customer)
         # - priority = service_time (ưu tiên service_time ngắn nhất)
@@ -101,9 +126,22 @@ class SJFModel(BaseQueueSystem):
         customer.served_event = self.env.event()
         
         # ========== CHỜ: ĐƯỢC PHỤC VỤ HOẶC HẾT KIÊN NHẪN ==========
+        # Tính thời gian kiên nhẫn còn lại (sau khi đã chờ K)
+        # start_wait_time được set TRƯỚC khi lấy K (trong food_station.py)
+        time_spent_waiting_K = self.env.now - customer.start_wait_time
+        patience_remaining = customer.patience_time - time_spent_waiting_K
+        
+        # Nếu đã hết kiên nhẫn ngay khi vào chờ server
+        if patience_remaining <= 0:
+            customer.reneged = True
+            self.analyzer.record_reneging_event()
+            wait_time = self.env.now - customer.start_wait_time
+            self.analyzer.record_wait_time(self.station_name, wait_time)
+            return
+        
         # Chờ: customer.served_event (được phục vụ) HOẶC timeout (hết kiên nhẫn)
         # | : Toán tử OR trong SimPy - chờ một trong hai sự kiện xảy ra trước
-        results = yield customer.served_event | self.env.timeout(customer.patience_time)
+        results = yield customer.served_event | self.env.timeout(patience_remaining)
         
         # ========== KIỂM TRA KẾT QUẢ ==========
         if customer.served_event not in results:
@@ -217,21 +255,52 @@ class SJFModel(BaseQueueSystem):
     def run_service(self, customer: Customer):
         """Process con phục vụ 1 khách hàng."""
         
-        # Ghi nhận thời gian chờ
+        # Kiểm tra khách đã reneged chưa (TRƯỚC khi ghi wait_time)
+        # Nếu khách đã rời đi (hết kiên nhẫn) → Trả server ngay, không ghi wait_time
+        # Lưu ý: Wait_time đã được ghi trong serve() khi reneging
+        if hasattr(customer, 'reneged') and customer.reneged:
+             yield self.servers.put(1) # Trả server ngay
+             return
+        
+        # Ghi nhận thời gian chờ - chỉ khi khách chưa reneged
         wait_time = self.env.now - customer.start_wait_time
         self.analyzer.record_wait_time(self.station_name, wait_time)
 
         # Thông báo cho 'serve' process là khách đã được phục vụ
         # (Để dừng 'timeout' của Reneging)
-        # Phải kiểm tra 'reneged' 1 lần nữa
-        if hasattr(customer, 'reneged') and customer.reneged:
-             yield self.servers.put(1) # Trả server ngay
-             return
+        if hasattr(customer, 'served_event') and customer.served_event:
+            customer.served_event.succeed()
         
         # Lấy service time
-        actual_service_time = random.expovariate(
-            1.0 / customer.service_times.get(self.station_name, self.avg_service_time)
+        base_service_time = customer.service_times.get(
+            self.station_name, 
+            self.avg_service_time
         )
+        
+        # Áp dụng logic customer types:
+        # - 'indulgent': Nhân đôi serve_time
+        if customer.customer_type == 'indulgent':
+            base_service_time *= 2.0
+        
+        # - 'erratic': Tăng service_time cho khách sau
+        # Logic này được xử lý trong serve() khi khách được thêm vào queue
+        # (tăng service_time cho khách đang chờ trong wait_list)
+        erratic_delay = 0.0
+        if customer.customer_type == 'erratic':
+            import config
+            erratic_delay = getattr(config, 'ERRATIC_DELAY_AMOUNT', 0.2)
+            # Tăng service_time cho tất cả khách đang chờ trong wait_list
+            for (_, _, waiting_customer) in self.wait_list:
+                if hasattr(waiting_customer, 'service_times'):
+                    station_time = waiting_customer.service_times.get(
+                        self.station_name,
+                        self.avg_service_time
+                    )
+                    waiting_customer.service_times[self.station_name] = (
+                        station_time + erratic_delay
+                    )
+        
+        actual_service_time = random.expovariate(1.0 / base_service_time)
         
         yield self.env.timeout(actual_service_time)
         

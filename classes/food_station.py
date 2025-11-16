@@ -13,12 +13,13 @@ class FoodStation:
     """
     def __init__(self, env: simpy.Environment, name: str, 
                  capacity_K: int, analyzer: Analysis, 
-                 discipline_model: BaseQueueSystem): # <--- CHỈ NHẬN 5 THAM SỐ NÀY
+                 discipline_model: BaseQueueSystem, config=None): # Thêm config parameter
         
         self.env = env
         self.name = name                 
         self.analyzer = analyzer
         self.discipline_model = discipline_model # Model (SJF, FCFS...) được tiêm vào
+        self.config = config  # Lưu config để reset patience_time
         
         # 'queue_space' vẫn ở đây, để theo dõi không gian vật lý (K)
         self.capacity_K = capacity_K     
@@ -33,25 +34,42 @@ class FoodStation:
         
         self.analyzer.record_attempt(self.name)
         
-        # 1. Kiểm tra không gian vật lý (K)
-        get_space_req = self.queue_space.get(1)
+        # 1. Reset patience_time và đánh dấu thời điểm bắt đầu chờ
+        # Lưu ý: Patience_time được reset ở mỗi quầy mới (theo yêu cầu)
+        # Tính lại patience_time dựa trên customer_type
+        if self.config:
+            patience_factor = self.config.PATIENCE_TIME_FACTORS.get(
+                customer.customer_type, 
+                1.0
+            )
+            customer.patience_time = self.config.DEFAULT_PATIENCE_TIME * patience_factor
         
-        # Khách hàng bắt đầu chờ K
+        # Đánh dấu thời điểm bắt đầu chờ (TRƯỚC khi kiểm tra K)
         customer.start_wait_time = self.env.now
         
-        results = yield get_space_req | self.env.timeout(customer.patience_time)
-
-        if get_space_req not in results:
-            # Hết kiên nhẫn khi chờ K (Balking)
+        # 2. Kiểm tra và lấy không gian vật lý (K) - BALKING
+        # Balking: Nếu K đầy → Khách bỏ về ngay lập tức (không chờ)
+        # SimPy Container: 
+        #   - init=K nghĩa là ban đầu có K đơn vị trong container (K chỗ trống)
+        #   - level = số đơn vị hiện có trong container (số chỗ còn trống)
+        #   - level = 0 → đã lấy hết (đầy, không còn chỗ)
+        #   - level = K → chưa lấy gì (rỗng, còn K chỗ)
+        # Vậy: available_space = level (số chỗ còn trống)
+        if self.queue_space.level == 0:
+            # Queue đã đầy (level = 0) → Balking ngay (không chờ patience_time)
             customer.reneged = True
-            self.analyzer.record_blocking_event(self.name) 
-            return # Khách hàng rời đi
-
-        # ---- Đã có chỗ trong quầy (K) ----
+            self.analyzer.record_blocking_event(self.name)
+            return  # Khách hàng bỏ về ngay
         
-        # 2. Ủy quyền cho mô hình (FCFS, SJF, ROS) xử lý
-        #    Logic chờ server (c) và Reneging
+        # 3. Lấy không gian K
+        # Lưu ý: Nếu available_space > 0, get(1) sẽ lấy ngay (không chờ)
+        # Nếu có race condition (nhiều khách cùng lúc), get(1) sẽ chờ
+        # Thời gian chờ đó sẽ được tính vào time_spent_waiting_K
+        yield self.queue_space.get(1)
+        
+        # 3. Ủy quyền cho mô hình xử lý chờ server (c) và RENEGING
+        # Reneging: Khách chờ server quá patience_time → Rời hàng
         yield self.env.process(self.discipline_model.serve(customer))
         
-        # 3. Phục vụ xong (hoặc reneged), trả lại không gian K
+        # 4. Phục vụ xong (hoặc reneged), trả lại không gian K
         yield self.queue_space.put(1)

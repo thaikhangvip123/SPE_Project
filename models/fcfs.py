@@ -46,7 +46,9 @@ class FCFSModel(BaseQueueSystem):
         5. Nếu hết kiên nhẫn → Reneging (rời đi)
         """
         # ========== BƯỚC 1: Tính thời gian kiên nhẫn còn lại ==========
-        # Khách đã chờ không gian K (từ food_station), thời gian đó được trừ vào patience
+        # start_wait_time được set TRƯỚC khi lấy K (trong food_station.py)
+        # Nếu lấy K ngay (không chờ), time_spent_waiting_K ≈ 0
+        # Nếu phải chờ K, time_spent_waiting_K > 0
         time_spent_waiting_K = self.env.now - customer.start_wait_time
         # Thời gian kiên nhẫn còn lại = Tổng thời gian kiên nhẫn - Thời gian đã chờ K
         patience_remaining = customer.patience_time - time_spent_waiting_K
@@ -92,6 +94,23 @@ class FCFSModel(BaseQueueSystem):
                 self.station_name,  # Tên quầy (Meat, Seafood, ...)
                 self.avg_service_time  # Nếu không có, dùng thời gian trung bình
             )
+            
+            # Áp dụng logic customer types:
+            # - 'indulgent': Nhân đôi serve_time
+            if customer.customer_type == 'indulgent':
+                base_service_time *= 2.0
+            
+            # - 'erratic': Tăng service_time cho khách sau
+            # Lưu ý: Trong FCFS, các khách đang chờ ở Resource queue,
+            # nên logic erratic được xử lý khi khách này được phục vụ
+            # (tăng service_time cho khách đang chờ trong queue)
+            erratic_delay = 0.0
+            if customer.customer_type == 'erratic':
+                import config
+                erratic_delay = getattr(config, 'ERRATIC_DELAY_AMOUNT', 0.2)
+                # Tăng service_time cho các khách đang chờ trong queue
+                # Lưu ý: SimPy Resource không cho phép truy cập queue trực tiếp,
+                # nên logic này được xử lý ở mức cao hơn (trong FoodStation)
             
             # Sinh thời gian phục vụ thực tế theo phân phối exponential (phân phối mũ)
             # expovariate(1.0 / mean): Sinh số ngẫu nhiên với trung bình = mean

@@ -76,9 +76,22 @@ class ROSModel(BaseQueueSystem):
         customer.served_event = self.env.event()
         
         # ========== BƯỚC 4: Chờ: ĐƯỢC PHỤC VỤ HOẶC HẾT KIÊN NHẪN ==========
+        # Tính thời gian kiên nhẫn còn lại (sau khi đã chờ K)
+        # start_wait_time được set TRƯỚC khi lấy K (trong food_station.py)
+        time_spent_waiting_K = self.env.now - customer.start_wait_time
+        patience_remaining = customer.patience_time - time_spent_waiting_K
+        
+        # Nếu đã hết kiên nhẫn ngay khi vào chờ server
+        if patience_remaining <= 0:
+            customer.reneged = True
+            self.analyzer.record_reneging_event()
+            wait_time = self.env.now - customer.start_wait_time
+            self.analyzer.record_wait_time(self.station_name, wait_time)
+            return
+        
         # Chờ: customer.served_event (được phục vụ) HOẶC timeout (hết kiên nhẫn)
         # | : Toán tử OR trong SimPy - chờ một trong hai sự kiện xảy ra trước
-        results = yield customer.served_event | self.env.timeout(customer.patience_time)
+        results = yield customer.served_event | self.env.timeout(patience_remaining)
         
         # ========== BƯỚC 5: Kiểm tra kết quả ==========
         if customer.served_event not in results:
@@ -176,36 +189,63 @@ class ROSModel(BaseQueueSystem):
         Process con phục vụ 1 khách hàng.
         
         LUỒNG:
-        1. Ghi nhận wait_time (thời gian chờ)
-        2. Thông báo cho khách (trigger customer_served_or_reneged)
-        3. Kiểm tra khách đã reneged chưa
+        1. Kiểm tra khách đã reneged chưa (TRƯỚC khi ghi wait_time)
+        2. Ghi nhận wait_time (thời gian chờ) - chỉ khi chưa reneged
+        3. Thông báo cho khách (trigger customer_served_or_reneged)
         4. Phục vụ (chờ service_time)
         5. Trả server về pool
         6. Đánh thức server_manager (có server rảnh)
         """
-        # ========== BƯỚC 1: Ghi nhận thời gian chờ ==========
+        # ========== BƯỚC 1: Kiểm tra khách đã reneged chưa ==========
+        # Nếu khách đã rời đi (hết kiên nhẫn) → Trả server ngay, không ghi wait_time
+        # Lưu ý: Wait_time đã được ghi trong serve() khi reneging
+        if hasattr(customer, 'reneged') and customer.reneged:
+            yield self.servers.put(1)  # Trả server về pool
+            return  # Không phục vụ, không ghi wait_time
+        
+        # ========== BƯỚC 2: Ghi nhận thời gian chờ ==========
         # Wait time = Tổng thời gian từ khi bắt đầu chờ K đến khi được phục vụ
+        # Chỉ ghi khi khách chưa reneged (đã được kiểm tra ở trên)
         wait_time = self.env.now - customer.start_wait_time
         self.analyzer.record_wait_time(self.station_name, wait_time)
         
-        # ========== BƯỚC 2: Thông báo cho khách ==========
+        # ========== BƯỚC 3: Thông báo cho khách ==========
         # Trigger event để khách biết đã được phục vụ
         # Điều này dừng timeout của Reneging trong serve() của khách
         if hasattr(customer, 'served_event') and customer.served_event:
             customer.served_event.succeed()
         
-        # ========== BƯỚC 3: Kiểm tra khách đã reneged chưa ==========
-        # Nếu khách đã rời đi (hết kiên nhẫn) → Trả server ngay, không phục vụ
-        if hasattr(customer, 'reneged') and customer.reneged:
-            yield self.servers.put(1)  # Trả server về pool
-            return  # Không phục vụ
-        
         # ========== BƯỚC 4: Phục vụ khách ==========
         # Lấy service_time của khách này
-        # Sinh thời gian phục vụ thực tế theo phân phối exponential
-        actual_service_time = random.expovariate(
-            1.0 / customer.service_times.get(self.station_name, self.avg_service_time)
+        base_service_time = customer.service_times.get(
+            self.station_name, 
+            self.avg_service_time
         )
+        
+        # Áp dụng logic customer types:
+        # - 'indulgent': Nhân đôi serve_time
+        if customer.customer_type == 'indulgent':
+            base_service_time *= 2.0
+        
+        # - 'erratic': Tăng service_time cho khách sau
+        # Logic erratic - khi erratic customer được phục vụ,
+        # các khách đang chờ sẽ có service_time tăng thêm
+        if customer.customer_type == 'erratic':
+            import config
+            erratic_delay = getattr(config, 'ERRATIC_DELAY_AMOUNT', 0.2)
+            # Tăng service_time cho tất cả khách đang chờ trong wait_list
+            for waiting_customer in self.wait_list:
+                if hasattr(waiting_customer, 'service_times'):
+                    station_time = waiting_customer.service_times.get(
+                        self.station_name,
+                        self.avg_service_time
+                    )
+                    waiting_customer.service_times[self.station_name] = (
+                        station_time + erratic_delay
+                    )
+        
+        # Sinh thời gian phục vụ thực tế theo phân phối exponential
+        actual_service_time = random.expovariate(1.0 / base_service_time)
         
         # Chờ thời gian phục vụ (khách đang lấy thức ăn)
         yield self.env.timeout(actual_service_time)

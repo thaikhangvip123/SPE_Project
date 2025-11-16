@@ -11,20 +11,41 @@ UNTIL_TIME = 1000.0
 
 # (ASSUMED) Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
-    0: 0.15,  # Cổng "Arrived 0"
-    1: 0.1   # Cổng "Arrived 1"
+    0: 3,  # Cổng "Arrived 0"
+    1: 6   # Cổng "Arrived 1"
 }
 
 # (ASSUMED) Thời gian kiên nhẫn mặc định
-DEFAULT_PATIENCE_TIME = 15.0 # Khách sẽ rời hàng đợi nếu chờ quá 15 phút
+# Lưu ý: Patience_time được reset ở mỗi quầy mới
+# Nếu wait time trung bình ~7 phút, patience_time nên >= 10-15 phút để tránh reneging quá nhiều
+DEFAULT_PATIENCE_TIME = 20.0 # Khách sẽ rời hàng đợi nếu chờ quá 20 phút (tăng từ 15 để giảm reneging)
+
+# (ASSUMED) Tỷ lệ phân bố các loại khách hàng
+CUSTOMER_TYPE_DISTRIBUTION = {
+    'normal': 0.70,      # 70% khách bình thường
+    'indulgent': 0.10,   # 10% khách tham lam (nhân đôi serve_time)
+    'impatient': 0.15,   # 15% khách thiếu kiên nhẫn (patience_time thấp)
+    'erratic': 0.05      # 5% khách thất thường (tăng service_time cho khách sau)
+}
+
+# (ASSUMED) Hệ số điều chỉnh patience_time cho từng loại khách
+PATIENCE_TIME_FACTORS = {
+    'normal': 1.0,       # Giữ nguyên
+    'indulgent': 1.0,    # Giữ nguyên
+    'impatient': 0.5,    # Giảm còn 50% (kiên nhẫn kém)
+    'erratic': 1.0       # Giữ nguyên
+}
+
+# (ASSUMED) Lượng service_time tăng thêm cho khách sau khi có erratic customer
+ERRATIC_DELAY_AMOUNT = 0.2  # Tăng thêm 0.2 phút cho mỗi khách sau
 
 # (ASSUMED) Thời gian phục vụ (lấy thức ăn) trung bình cho 1 khách
 # tại các quầy. Dùng để sinh ngẫu nhiên service time cho SJF.
 DEFAULT_SERVICE_TIMES = {
-    'Meat': 2.0,
-    'Seafood': 2.0,
-    'Dessert': 2.5,
-    'Fruit':2.5
+    'Meat': 0.5,
+    'Seafood': 0.3,
+    'Dessert': 0.5,
+    'Fruit':0.2
 }
 
 # Cấu hình các quầy thức ăn (Stations)
@@ -33,26 +54,26 @@ STATIONS = {
     'Meat': {
         'servers': 10,            # 10 Tongs
         'capacity_K': 10,         # (ASSUMED) Giới hạn không gian
-        'discipline': 'SJF',      # SJF
-        'avg_service_time': 0.5   # (ASSUMED) 
+        'discipline': 'FCFS',      # SJF
+        'avg_service_time':0.5   # (ASSUMED) 
     },
     'Seafood': {
         'servers': 5,             # 5 Tongs
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'SJF',      # SJF
-        'avg_service_time': 0.4   # (ASSUMED)
+        'discipline': 'FCFS',      # SJF
+        'avg_service_time': 0.3   # (ASSUMED)
     },
     'Dessert': {
         'servers': 7,             # 7 Ladle
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'ROS',      # ROS
-        'avg_service_time': 0.3   # (ASSUMED)
+        'discipline': 'FCFS',      # ROS
+        'avg_service_time': 0.5   # (ASSUMED)
     },
     'Fruit': {
         'servers':7,              # Grab by hand (ASSUMED = 7)
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'ROS',      # ROS
-        'avg_service_time': 0.2   # (ASSUMED)
+        'discipline': 'FCFS',      # ROS
+        'avg_service_time': 0.3   # (ASSUMED)
     }
 }
 

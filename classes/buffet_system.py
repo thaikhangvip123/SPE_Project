@@ -40,7 +40,8 @@ class BuffetSystem:
                 name=name,
                 capacity_K=cfg['capacity_K'],
                 analyzer=analyzer,
-                discipline_model=model # Tiêm model vào
+                discipline_model=model, # Tiêm model vào
+                config=config  # Truyền config để reset patience_time
             )
 
             # Ghi nhận station với analyzer
@@ -68,12 +69,24 @@ class BuffetSystem:
                 # Giả định thời gian của khách dao động 50%-150% so với trung bình
                 customer_service_times[station] = random.uniform(base_time * 0.5, base_time * 1.5)
 
+            # Chọn loại khách hàng dựa trên phân phối xác suất
+            customer_types = list(self.config.CUSTOMER_TYPE_DISTRIBUTION.keys())
+            customer_weights = list(self.config.CUSTOMER_TYPE_DISTRIBUTION.values())
+            customer_type = random.choices(customer_types, weights=customer_weights, k=1)[0]
+            
+            # Tính patience_time dựa trên loại khách hàng
+            patience_factor = self.config.PATIENCE_TIME_FACTORS.get(
+                customer_type, 
+                1.0  # Mặc định giữ nguyên
+            )
+            patience_time = self.config.DEFAULT_PATIENCE_TIME * patience_factor
+
             new_customer = Customer(
                 id=customer_id,
                 arrival_gate=gate_id,
                 arrival_time=self.env.now,
-                customer_type='normal',
-                patience_time=self.config.DEFAULT_PATIENCE_TIME,
+                customer_type=customer_type,
+                patience_time=patience_time,
                 service_times=customer_service_times
             )
             # Thêm thuộc tính 'reneged'
@@ -83,26 +96,54 @@ class BuffetSystem:
 
     def customer_lifecycle(self, customer: Customer):
         """
-        Hành trình của khách hàng (Sửa lỗi đếm trùng).
-        """
+        Hành trình của khách hàng.
         
+        LUỒNG:
+        1. Kiểm tra tất cả quầy đầy → Balking ngay
+        2. Chọn quầy đầu tiên
+        3. Đến quầy (có thể bị balking nếu quầy đầy)
+        4. Lấy thức ăn (có thể reneging nếu chờ server quá lâu)
+        5. Quyết định: Lấy thêm hay ra về
+        6. Lặp lại hoặc thoát
+        """
+        # ========== BƯỚC 1: Kiểm tra TẤT CẢ quầy đều đầy → Balking ngay ==========
+        # Theo mô tả: "Nếu tất cả các quầy đều đã đầy thì khách hàng đến sẽ bỏ về (fail)"
+        # SimPy Container: level = 0 nghĩa là đầy (không còn chỗ)
+        if all(station.queue_space.level == 0 for station in self.stations.values()):
+            customer.reneged = True
+            # Ghi nhận balking ở tất cả các quầy (hoặc có thể tạo event riêng ở system level)
+            for station_name in self.stations.keys():
+                self.analyzer.record_blocking_event(station_name)
+            return
+        
+        # ========== BƯỚC 2: Chọn quầy đầu tiên dựa trên ma trận xác suất ==========
         station_name = self.choose_initial_section(customer.arrival_gate)
-        visited_stations = set()
+        
+        # Chỉ 'indulgent' không được quay lại quầy đã đi qua
+        # Các loại khác có thể quay lại quầy cũ
+        visited_stations = set() if customer.customer_type == 'indulgent' else None
 
+        # ========== VÒNG LẶP: Đi lấy thức ăn tại các quầy ==========
         while station_name is not None:
-            if station_name in visited_stations:
+            # Kiểm tra visited_stations chỉ cho indulgent
+            if visited_stations is not None and station_name in visited_stations:
                 station_name = self.choose_next_action(customer, visited_stations)
                 continue
 
             station = self.stations[station_name]
-            visited_stations.add(station_name)
             
+            # Đánh dấu quầy đã đi qua (chỉ cho indulgent)
+            if visited_stations is not None:
+                visited_stations.add(station_name)
+            
+            # Đến quầy và lấy thức ăn (có thể bị balking hoặc reneging)
             yield self.env.process(station.serve(customer))
             
-            # Nếu khách đã 'reneged', dừng hành trình ngay
+            # Nếu khách đã balking hoặc reneging, dừng hành trình ngay
             if customer.reneged:
-                break # Thoát khỏi vòng lặp 'while'
+                break  # Thoát khỏi vòng lặp
 
+            # Quyết định: Lấy thêm hay ra về
             station_name = self.choose_next_action(customer, visited_stations)
         
         # --- LOGIC SỬA LỖI ---
@@ -132,9 +173,13 @@ class BuffetSystem:
         # Trả về một lựa chọn dựa trên trọng số xác suất
         return random.choices(stations, weights=probs, k=1)[0]
 
-    def choose_next_action(self, customer: Customer, visited_stations: set):
+    def choose_next_action(self, customer: Customer, visited_stations):
         """
         Quyết định: (a) đi lấy thêm đồ hay (b) ra về. [cite: 277, 278]
+        
+        LƯU Ý: 
+        - 'indulgent': Không được quay lại quầy đã đi (visited_stations là set)
+        - Các loại khác: Có thể quay lại quầy cũ (visited_stations là None)
         """
         # Quyết định: Lấy thêm hay Về? (Hình 2 [cite: 118])
         prob_map = self.prob_matrices['next_action']
@@ -145,26 +190,30 @@ class BuffetSystem:
         )[0]
         
         if action == 'Exit':
-            return None # [cite: 280]
+            return None  # Khách quyết định ra về
         
+        # Nếu chọn "More", chọn quầy tiếp theo
         prob_map_transition = self.prob_matrices['transition']
         
         available_stations = []
         available_probs = []
         
         for station, prob in prob_map_transition.items():
-            if station not in visited_stations:
+            # Chỉ 'indulgent' mới bị giới hạn visited_stations
+            if visited_stations is None or station not in visited_stations:
                 available_stations.append(station)
                 available_probs.append(prob)
         
         if not available_stations:
-            return None # Không còn quầy nào để đi
+            return None  # Không còn quầy nào để đi (cho indulgent)
 
         # Chuẩn hóa lại xác suất
         total_prob = sum(available_probs)
-        normalized_probs = [p / total_prob for p in available_probs]
-        
-        return random.choices(available_stations, weights=normalized_probs, k=1)[0]
+        if total_prob > 0:
+            normalized_probs = [p / total_prob for p in available_probs]
+            return random.choices(available_stations, weights=normalized_probs, k=1)[0]
+        else:
+            return None
 
     def run(self, until_time):
         """
