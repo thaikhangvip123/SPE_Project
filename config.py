@@ -12,7 +12,7 @@ UNTIL_TIME = 1000.0
 # (ASSUMED) Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
     0: 3,  # Cổng "Arrived 0"
-    1: 6   # Cổng "Arrived 1"
+    1: 4   # Cổng "Arrived 1"
 }
 
 # (ASSUMED) Thời gian kiên nhẫn mặc định
@@ -42,37 +42,37 @@ ERRATIC_DELAY_AMOUNT = 0.2  # Tăng thêm 0.2 phút cho mỗi khách sau
 # (ASSUMED) Thời gian phục vụ (lấy thức ăn) trung bình cho 1 khách
 # tại các quầy. Dùng để sinh ngẫu nhiên service time cho SJF.
 DEFAULT_SERVICE_TIMES = {
-    'Meat': 0.5,
-    'Seafood': 0.3,
-    'Dessert': 0.5,
-    'Fruit':0.2
+    'Meat': 0.7,
+    'Seafood': 0.5,
+    'Dessert': 0.8,
+    'Fruit':0.3
 }
 
 # Cấu hình các quầy thức ăn (Stations)
 # Dựa trên Hình 1 (trang 4) và Hình 2 (trang 6)
 STATIONS = {
     'Meat': {
-        'servers': 10,            # 10 Tongs
+        'servers': 5,            # 10 Tongs
         'capacity_K': 10,         # (ASSUMED) Giới hạn không gian
-        'discipline': 'FCFS',      # SJF
+        'discipline': 'SJF',      # SJF
         'avg_service_time':0.5   # (ASSUMED) 
     },
     'Seafood': {
-        'servers': 5,             # 5 Tongs
+        'servers': 7,             # 5 Tongs
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'FCFS',      # SJF
+        'discipline': 'SJF',      # SJF
         'avg_service_time': 0.3   # (ASSUMED)
     },
     'Dessert': {
         'servers': 7,             # 7 Ladle
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'FCFS',      # ROS
+        'discipline': 'ROS',      # ROS
         'avg_service_time': 0.5   # (ASSUMED)
     },
     'Fruit': {
-        'servers':7,              # Grab by hand (ASSUMED = 7)
+        'servers':10,              # Grab by hand (ASSUMED = 7)
         'capacity_K': 10,         # (ASSUMED)
-        'discipline': 'FCFS',      # ROS
+        'discipline': 'ROS',      # ROS
         'avg_service_time': 0.3   # (ASSUMED)
     }
 }
@@ -112,8 +112,8 @@ PROB_MATRICES = {
     },
     
     # (ASSUMED) Xác suất chọn quầy tiếp theo (nếu chọn 'More')
-    # Phân bố đều cho các quầy
-    'transition': {
+    # Phân bố đều cho các quầy #######FIX########
+    'transition': { # Nếu các quầy đều thì bỏ về (balking)
         'Meat': 0.25,
         'Seafood': 0.25,
         'Dessert': 0.25,
