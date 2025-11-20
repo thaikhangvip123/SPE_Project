@@ -106,30 +106,19 @@ class BuffetSystem:
         5. Quyết định: Lấy thêm hay ra về
         6. Lặp lại hoặc thoát
         """
-        # ========== BƯỚC 1: Kiểm tra TẤT CẢ quầy đều đầy → Balking ngay ==========
-        # Theo mô tả: "Nếu tất cả các quầy đều đã đầy thì khách hàng đến sẽ bỏ về (fail)"
-        # SimPy Container: level = 0 nghĩa là đầy (không còn chỗ)
-        if all(station.queue_space.level == 0 for station in self.stations.values()):
-            customer.reneged = True
-            # Ghi nhận balking ở tất cả các quầy (hoặc có thể tạo event riêng ở system level)
-            for station_name in self.stations.keys():
-                self.analyzer.record_blocking_event(station_name)
-            return
-        
-        # ========== BƯỚC 2: Chọn quầy đầu tiên dựa trên ma trận xác suất ==========
-        station_name = self.choose_initial_section(customer.arrival_gate)
-        
         # Chỉ 'indulgent' không được quay lại quầy đã đi qua
         # Các loại khác có thể quay lại quầy cũ
         visited_stations = set() if customer.customer_type == 'indulgent' else None
 
+        # ========== BƯỚC 1: Chọn quầy đầu tiên kèm kiểm tra K ==========
+        station_name, no_available = self.choose_initial_section(customer.arrival_gate)
+        if station_name is None:
+            if no_available:
+                customer.reneged = True
+            return
+
         # ========== VÒNG LẶP: Đi lấy thức ăn tại các quầy ==========
         while station_name is not None:
-            # Kiểm tra visited_stations chỉ cho indulgent
-            if visited_stations is not None and station_name in visited_stations:
-                station_name = self.choose_next_action(customer, visited_stations)
-                continue
-
             station = self.stations[station_name]
             
             # Đánh dấu quầy đã đi qua (chỉ cho indulgent)
@@ -144,7 +133,12 @@ class BuffetSystem:
                 break  # Thoát khỏi vòng lặp
 
             # Quyết định: Lấy thêm hay ra về
-            station_name = self.choose_next_action(customer, visited_stations)
+            next_station, reason = self.choose_next_action(customer, visited_stations)
+            if next_station is None:
+                if reason == 'no_available':
+                    customer.reneged = True
+                break
+            station_name = next_station
         
         # --- LOGIC SỬA LỖI ---
         # Kiểm tra xem vòng lặp 'while' kết thúc
@@ -161,17 +155,13 @@ class BuffetSystem:
 
     def choose_initial_section(self, gate_id):
         """
-        Chọn quầy đầu tiên dựa trên ma trận xác suất của cổng vào. 
+        Chọn quầy đầu tiên dựa trên ma trận xác suất của cổng vào.
+        Trả về tuple (station_name, no_available). station_name = None khi không
+        có quầy nào còn chỗ.
         """
         # Lấy ma trận xác suất cho cổng này
         prob_map = self.prob_matrices['initial'][gate_id]
-        
-        # Lấy list các quầy và xác suất tương ứng
-        stations = list(prob_map.keys())
-        probs = list(prob_map.values())
-        
-        # Trả về một lựa chọn dựa trên trọng số xác suất
-        return random.choices(stations, weights=probs, k=1)[0]
+        return self._select_station_with_capacity(prob_map)
 
     def choose_next_action(self, customer: Customer, visited_stations):
         """
@@ -180,6 +170,10 @@ class BuffetSystem:
         LƯU Ý: 
         - 'indulgent': Không được quay lại quầy đã đi (visited_stations là set)
         - Các loại khác: Có thể quay lại quầy cũ (visited_stations là None)
+        Trả về tuple (station_name_or_none, reason):
+            - reason = 'exit'  → khách quyết định ra về
+            - reason = 'no_available' → muốn lấy thêm nhưng tất cả quầy hợp lệ đều đầy
+            - reason = None → có quầy mới để tới
         """
         # Quyết định: Lấy thêm hay Về? (Hình 2 [cite: 118])
         prob_map = self.prob_matrices['next_action']
@@ -190,30 +184,77 @@ class BuffetSystem:
         )[0]
         
         if action == 'Exit':
-            return None  # Khách quyết định ra về
+            return None, 'exit'  # Khách quyết định ra về
         
-        # Nếu chọn "More", chọn quầy tiếp theo
+        # Nếu chọn "More", chọn quầy tiếp theo theo logic phân bổ mới
         prob_map_transition = self.prob_matrices['transition']
-        
-        available_stations = []
-        available_probs = []
-        
-        for station, prob in prob_map_transition.items():
-            # Chỉ 'indulgent' mới bị giới hạn visited_stations
-            if visited_stations is None or station not in visited_stations:
-                available_stations.append(station)
-                available_probs.append(prob)
-        
-        if not available_stations:
-            return None  # Không còn quầy nào để đi (cho indulgent)
+        next_station, no_available = self._select_station_with_capacity(
+            prob_map_transition,
+            visited_stations
+        )
+        if next_station is None and no_available:
+            return None, 'no_available'
+        return next_station, None
 
-        # Chuẩn hóa lại xác suất
-        total_prob = sum(available_probs)
-        if total_prob > 0:
-            normalized_probs = [p / total_prob for p in available_probs]
-            return random.choices(available_stations, weights=normalized_probs, k=1)[0]
-        else:
-            return None
+    def _select_station_with_capacity(self, prob_map, visited_stations=None):
+        """
+        Chọn quầy dựa theo xác suất. Nếu quầy được chọn đang đầy K, đặt xác suất
+        của quầy đó về 0, chia đều phần xác suất bị mất cho các quầy còn lại
+        (đảm bảo tổng = 1) rồi chọn lại. Lặp đến khi tìm được quầy còn chỗ
+        hoặc tất cả xác suất đều về 0 (mọi quầy đầy) → trả None, True.
+        """
+        current_probs = {}
+        for station, prob in prob_map.items():
+            if visited_stations is not None and station in visited_stations:
+                continue
+            current_probs[station] = prob
+
+        if not current_probs:
+            return None, False  # Không có quầy hợp lệ (do visited hoặc không cấu hình)
+
+        full_attempts = []
+        full_set = set()
+        while True:
+            # A={ i ∣ p[i] ​> 0}
+            active_stations = [s for s, p in current_probs.items() if p > 0]
+            if not active_stations:
+                if full_attempts:
+                    self._record_balking_for_stations(full_attempts)
+                    return None, True  # Tất cả xác suất đã về 0 do quầy đầy
+                return None, False  # Không có xác suất dương nào (không phải do đầy)
+
+            weights = [current_probs[s] for s in active_stations]
+
+            # chosen∼DiscreteDistribution(P) Where: 𝑃 = { 𝑝[𝑖] ∣ 𝑖 ∈ 𝐴}
+            chosen = random.choices(active_stations, weights=weights, k=1)[0]
+
+            if self.stations[chosen].queue_space.level > 0:
+                return chosen, False
+
+            # Quầy đã đầy: chuyển xác suất sang các quầy còn lại
+            full_attempts.append(chosen)
+            full_set.add(chosen)
+
+            prob_loss = current_probs[chosen]
+            current_probs[chosen] = 0.0
+
+            remaining = [s for s in current_probs if s not in full_set]
+            if not remaining:
+                self._record_balking_for_stations(full_attempts)
+                return None, True  # Không còn quầy nào để nhận phần xác suất mất
+
+            share = prob_loss / len(remaining)
+            for station in remaining:
+                current_probs[station] += share
+
+    def _record_balking_for_stations(self, stations):
+        """Ghi nhận attempt + balking khi mọi quầy hợp lệ đều đầy."""
+        unique = set(stations)
+        for station_name in unique:
+            self.analyzer.record_attempt(station_name)
+            self.analyzer.record_blocking_event(station_name)
+        if unique:
+            self.analyzer.record_customer_balk()
 
     def run(self, until_time):
         """

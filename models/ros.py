@@ -76,15 +76,12 @@ class ROSModel(BaseQueueSystem):
         customer.served_event = self.env.event()
         
         # ========== BƯỚC 4: Chờ: ĐƯỢC PHỤC VỤ HOẶC HẾT KIÊN NHẪN ==========
-        # Tính thời gian kiên nhẫn còn lại (sau khi đã chờ K)
-        # start_wait_time được set TRƯỚC khi lấy K (trong food_station.py)
-        time_spent_waiting_K = self.env.now - customer.start_wait_time
-        patience_remaining = customer.patience_time - time_spent_waiting_K
+        patience_remaining = customer.patience_time
         
         # Nếu đã hết kiên nhẫn ngay khi vào chờ server
         if patience_remaining <= 0:
             customer.reneged = True
-            self.analyzer.record_reneging_event()
+            self.analyzer.record_reneging_event(self.station_name)
             wait_time = self.env.now - customer.start_wait_time
             self.analyzer.record_wait_time(self.station_name, wait_time)
             return
@@ -97,7 +94,7 @@ class ROSModel(BaseQueueSystem):
         if customer.served_event not in results:
             # customer.served_event không có trong results → timeout xảy ra trước
             # Khách đã chờ quá lâu mà vẫn chưa được phục vụ → Reneging
-            self.analyzer.record_reneging_event()
+            self.analyzer.record_reneging_event(self.station_name)
             customer.reneged = True  # Đánh dấu khách đã rời đi
             wait_time = self.env.now - customer.start_wait_time
             self.analyzer.record_wait_time(self.station_name, wait_time)

@@ -34,20 +34,7 @@ class FoodStation:
         
         self.analyzer.record_attempt(self.name)
         
-        # 1. Reset patience_time và đánh dấu thời điểm bắt đầu chờ
-        # Lưu ý: Patience_time được reset ở mỗi quầy mới (theo yêu cầu)
-        # Tính lại patience_time dựa trên customer_type
-        if self.config:
-            patience_factor = self.config.PATIENCE_TIME_FACTORS.get(
-                customer.customer_type, 
-                1.0
-            )
-            customer.patience_time = self.config.DEFAULT_PATIENCE_TIME * patience_factor
-        
-        # Đánh dấu thời điểm bắt đầu chờ (TRƯỚC khi kiểm tra K)
-        customer.start_wait_time = self.env.now
-        
-        # 2. Kiểm tra và lấy không gian vật lý (K) - BALKING
+        # 1. Kiểm tra và lấy không gian vật lý (K) - BALKING
         # Balking: Nếu K đầy → Khách bỏ về ngay lập tức (không chờ)
         # SimPy Container: 
         #   - init=K nghĩa là ban đầu có K đơn vị trong container (K chỗ trống)
@@ -59,13 +46,25 @@ class FoodStation:
             # Queue đã đầy (level = 0) → Balking ngay (không chờ patience_time)
             customer.reneged = True
             self.analyzer.record_blocking_event(self.name)
+            self.analyzer.record_customer_balk()
             return  # Khách hàng bỏ về ngay
         
-        # 3. Lấy không gian K
+        # 2. Lấy không gian K
         # Lưu ý: Nếu available_space > 0, get(1) sẽ lấy ngay (không chờ)
         # Nếu có race condition (nhiều khách cùng lúc), get(1) sẽ chờ
         # Thời gian chờ đó sẽ được tính vào time_spent_waiting_K
         yield self.queue_space.get(1)
+
+        # 3. Reset patience_time sau khi khách THỰC SỰ vào quầy
+        if self.config:
+            patience_factor = self.config.PATIENCE_TIME_FACTORS.get(
+                customer.customer_type, 
+                1.0
+            )
+            customer.patience_time = self.config.DEFAULT_PATIENCE_TIME * patience_factor
+        
+        # Đánh dấu thời điểm bắt đầu chờ server (sau khi đã có chỗ K)
+        customer.start_wait_time = self.env.now
         
         # 3. Ủy quyền cho mô hình xử lý chờ server (c) và RENEGING
         # Reneging: Khách chờ server quá patience_time → Rời hàng
