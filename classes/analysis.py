@@ -23,11 +23,13 @@ class Analysis:
         
         # {'Meat': 5, 'Seafood': 2} (số lần bị chặn)
         self.blocking_events = {}    # [cite: 169]
+        self.reneging_events = {}
         
         # --- Thống kê đã tính (Calculated Statistics) ---
         self.avg_wait_time_per_station = {}
         self.avg_system_time = 0.0
         self.blocking_probability_per_station = {}
+        self.reneging_probability_per_station = {}
         self.total_attempts_per_station = {} # Cần để tính xác suất
 
     def add_station(self, station_name):
@@ -36,6 +38,7 @@ class Analysis:
             self.wait_times[station_name] = []
             self.blocking_events[station_name] = 0
             self.total_attempts_per_station[station_name] = 0
+            self.reneging_events[station_name] = 0
 
     def record_arrival(self):
         """[cite: 171]"""
@@ -56,11 +59,21 @@ class Analysis:
 
     def record_blocking_event(self, station_name):
         """Ghi nhận khi khách bị chặn (Balking)[cite: 174, 222]."""
+        if station_name not in self.blocking_events:
+            self.blocking_events[station_name] = 0
+        if station_name not in self.total_attempts_per_station:
+            self.total_attempts_per_station[station_name] = 0
         self.blocking_events[station_name] += 1
+
+    def record_customer_balk(self):
+        """Ghi nhận tổng số khách bỏ về do hết chỗ K."""
         self.total_balked += 1
 
-    def record_reneging_event(self):
+    def record_reneging_event(self, station_name):
         """Ghi nhận khi khách rời hàng đợi (Reneging)."""
+        if station_name not in self.reneging_events:
+            self.reneging_events[station_name] = 0
+        self.reneging_events[station_name] += 1
         self.total_reneged += 1
 
     def calculate_statistics(self):
@@ -85,6 +98,13 @@ class Analysis:
             else:
                 self.blocking_probability_per_station[station] = 0.0
 
+        for station, reneged_count in self.reneging_events.items():
+            attempts = self.total_attempts_per_station.get(station, 0)
+            if attempts > 0:
+                self.reneging_probability_per_station[station] = reneged_count / attempts
+            else:
+                self.reneging_probability_per_station[station] = 0.0
+
     def print_report(self):
         """Định dạng và in kết quả đã tính. """
         print("--- BAO CAO MO PHONG ---")
@@ -92,18 +112,35 @@ class Analysis:
         print(f"Tong so khach thoat: {self.total_exits}")
         print(f"Tong so khach bo ve (Balked - het cho K): {self.total_balked}")
         print(f"Tong so khach bo ve (Reneged - mat kien nhan): {self.total_reneged}")
+
+        # overall_balking_rate = (
+        #     self.total_balked / self.total_arrivals
+        #     if self.total_arrivals else 0.0
+        # )
+        # overall_reneging_rate = (
+        #     self.total_reneged / self.total_arrivals
+        #     if self.total_arrivals else 0.0
+        # )
+        # print(f"Tyle khach bi chan vi day K: {overall_balking_rate:.2%}")
+        # print("Tyle khach reneging khi het DEFAULT_PATIENCE_TIME: "
+        #       f"{overall_reneging_rate:.2%}")
         
         print(f"\nThoi gian trung binh trong he thong: {self.avg_system_time:.2f}")
         
         print("\nThoi gian cho trung binh tai quay:")
         # In tất cả stations, kể cả không có wait time
         all_stations = set(self.wait_times.keys()) | set(self.total_attempts_per_station.keys())
-        for station in sorted(all_stations):
+        station_order = ['Meat', 'Seafood', 'Dessert', 'Fruit']
+        for station in station_order:
             time = self.avg_wait_time_per_station.get(station, 0.0)
             attempts = self.total_attempts_per_station.get(station, 0)
             wait_count = len(self.wait_times.get(station, []))
-            print(f"  - {station:<10}: {time:.2f} (attempts: {attempts}, wait_records: {wait_count})")
+            print(f"  - {station:<10}: {time:.4f} (attempts: {attempts}, wait_records: {wait_count})")
 
         print("\nXac suat bi chan (Balking):")
         for station, prob in self.blocking_probability_per_station.items():
-            print(f"  - {station:<10}: {prob:.2%}")
+            print(f"  - {station:<10}: {prob:.4%}")
+
+        print("\nXac suat bi chan (Reneging - Het patience):")
+        for station, prob in self.reneging_probability_per_station.items():
+            print(f"  - {station:<10}: {prob:.4%}")
