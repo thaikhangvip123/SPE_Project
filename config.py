@@ -11,14 +11,14 @@ UNTIL_TIME = 1000.0
 
 # (ASSUMED) Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
-    0: 3,  # Cổng "Arrived 0"
-    1: 4   # Cổng "Arrived 1"
+    0: 12,  # Cổng "Arrived 0"
+    1: 10   # Cổng "Arrived 1"
 }
 
 # (ASSUMED) Thời gian kiên nhẫn mặc định
 # Lưu ý: Patience_time được reset ở mỗi quầy mới
 # Nếu wait time trung bình ~7 phút, patience_time nên >= 10-15 phút để tránh reneging quá nhiều
-DEFAULT_PATIENCE_TIME = 20.0 # Khách sẽ rời hàng đợi nếu chờ quá 20 phút (tăng từ 15 để giảm reneging)
+DEFAULT_PATIENCE_TIME = 10.0 # Khách sẽ rời hàng đợi nếu chờ quá 20 phút (tăng từ 15 để giảm reneging)
 
 # (ASSUMED) Tỷ lệ phân bố các loại khách hàng
 CUSTOMER_TYPE_DISTRIBUTION = {
