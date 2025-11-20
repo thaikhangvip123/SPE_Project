@@ -46,17 +46,13 @@ class FCFSModel(BaseQueueSystem):
         5. Nếu hết kiên nhẫn → Reneging (rời đi)
         """
         # ========== BƯỚC 1: Tính thời gian kiên nhẫn còn lại ==========
-        # start_wait_time được set TRƯỚC khi lấy K (trong food_station.py)
-        # Nếu lấy K ngay (không chờ), time_spent_waiting_K ≈ 0
-        # Nếu phải chờ K, time_spent_waiting_K > 0
-        time_spent_waiting_K = self.env.now - customer.start_wait_time
-        # Thời gian kiên nhẫn còn lại = Tổng thời gian kiên nhẫn - Thời gian đã chờ K
-        patience_remaining = customer.patience_time - time_spent_waiting_K
+        # Patience_time được reset khi khách vào quầy (FoodStation)
+        patience_remaining = customer.patience_time
         
-        # Nếu đã hết kiên nhẫn ngay khi vào chờ server (do chờ K quá lâu)
+        # Nếu đã hết kiên nhẫn ngay khi vào chờ server
         if patience_remaining <= 0:
             customer.reneged = True  # Đánh dấu khách đã rời đi
-            self.analyzer.record_reneging_event()  # Ghi nhận sự kiện reneging
+            self.analyzer.record_reneging_event(self.station_name)  # Ghi nhận sự kiện reneging
             wait_time = self.env.now - customer.start_wait_time
             self.analyzer.record_wait_time(self.station_name, wait_time)
             return  # Khách rời đi, không được phục vụ
@@ -82,7 +78,7 @@ class FCFSModel(BaseQueueSystem):
                 # req không có trong results → timeout xảy ra trước (hết kiên nhẫn)
                 # Khách đã chờ quá lâu mà vẫn chưa được server → Reneging
                 customer.reneged = True
-                self.analyzer.record_reneging_event()
+                self.analyzer.record_reneging_event(self.station_name)
                 return  # Khách hàng rời hàng đợi, không được phục vụ
 
             # ========== BƯỚC 4: Đã được server phục vụ ==========
