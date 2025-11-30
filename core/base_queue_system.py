@@ -12,6 +12,7 @@ class BaseQueueSystem(ABC):
     def __init__(self, env: simpy.Environment, num_servers: int, 
                  avg_service_time: float, analyzer: Analysis, station_name: str):
         self.env = env
+        # num_servers: Số lượng không gian vật lý để đứng lấy thức ăn (serving space)
         self.num_servers = num_servers
         self.avg_service_time = avg_service_time
         self.analyzer = analyzer
@@ -21,7 +22,7 @@ class BaseQueueSystem(ABC):
     def serve(self, customer: Customer):
         """
         Tiến trình trừu tượng cho việc phục vụ khách hàng.
-        Bao gồm logic chờ server (c) và xử lý "Reneging".
-        Logic chờ không gian (K) được xử lý ở FoodStation.
+        Bao gồm logic chờ không gian phục vụ (serving space) và xử lý "Reneging".
+        Logic chờ không gian tổng thể (K) được xử lý ở FoodStation.
         """
         pass

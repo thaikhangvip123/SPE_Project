@@ -28,13 +28,13 @@ class FoodStation:
     def serve(self, customer: Customer):
         """
         Tiến trình mô phỏng.
-        Xử lý logic chờ không gian (K) (Balking).
-        Sau đó ủy quyền logic chờ server (c) (Reneging) cho discipline_model.
+        Xử lý logic chờ không gian tổng thể (K) (Balking).
+        Sau đó ủy quyền logic chờ không gian phục vụ (serving space) (Reneging) cho discipline_model.
         """
         
         self.analyzer.record_attempt(self.name)
         
-        # 1. Kiểm tra và lấy không gian vật lý (K) - BALKING
+        # 1. Kiểm tra và lấy không gian vật lý tổng thể (K) - BALKING
         # Balking: Nếu K đầy → Khách bỏ về ngay lập tức (không chờ)
         # SimPy Container: 
         #   - init=K nghĩa là ban đầu có K đơn vị trong container (K chỗ trống)
@@ -42,6 +42,7 @@ class FoodStation:
         #   - level = 0 → đã lấy hết (đầy, không còn chỗ)
         #   - level = K → chưa lấy gì (rỗng, còn K chỗ)
         # Vậy: available_space = level (số chỗ còn trống)
+        # K bao gồm: không gian đứng lấy thức ăn (serving space) + không gian đứng xếp hàng
         if self.queue_space.level == 0:
             # Queue đã đầy (level = 0) → Balking ngay (không chờ patience_time)
             customer.reneged = True
@@ -49,7 +50,7 @@ class FoodStation:
             self.analyzer.record_customer_balk()
             return  # Khách hàng bỏ về ngay
         
-        # 2. Lấy không gian K
+        # 2. Lấy không gian K (tổng thể)
         # Lưu ý: Nếu available_space > 0, get(1) sẽ lấy ngay (không chờ)
         # Nếu có race condition (nhiều khách cùng lúc), get(1) sẽ chờ
         # Thời gian chờ đó sẽ được tính vào time_spent_waiting_K
@@ -63,12 +64,12 @@ class FoodStation:
             )
             customer.patience_time = self.config.DEFAULT_PATIENCE_TIME * patience_factor
         
-        # Đánh dấu thời điểm bắt đầu chờ server (sau khi đã có chỗ K)
+        # Đánh dấu thời điểm bắt đầu chờ không gian phục vụ (sau khi đã có chỗ K)
         customer.start_wait_time = self.env.now
         
-        # 3. Ủy quyền cho mô hình xử lý chờ server (c) và RENEGING
-        # Reneging: Khách chờ server quá patience_time → Rời hàng
+        # 4. Ủy quyền cho mô hình xử lý chờ không gian phục vụ (serving space) và RENEGING
+        # Reneging: Khách chờ không gian phục vụ quá patience_time → Rời hàng
         yield self.env.process(self.discipline_model.serve(customer))
         
-        # 4. Phục vụ xong (hoặc reneged), trả lại không gian K
+        # 5. Phục vụ xong (hoặc reneged), trả lại không gian K
         yield self.queue_space.put(1)
