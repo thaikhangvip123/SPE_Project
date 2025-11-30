@@ -6,6 +6,10 @@ Các giá trị giả định (MARKED AS ASSUMED) cần được xác nhận
 lại từ yêu cầu hoặc báo cáo chi tiết.
 """
 
+# Seed cho random để đảm bảo kết quả tái lập được
+# Mỗi config file nên có seed riêng để kết quả nhất quán
+RANDOM_SEED = 42
+
 # Thời gian mô phỏng tổng cộng (đơn vị: phút)
 UNTIL_TIME = 1000.0
 
@@ -50,28 +54,33 @@ DEFAULT_SERVICE_TIMES = {
 
 # Cấu hình các quầy thức ăn (Stations)
 # Dựa trên Hình 1 (trang 4) và Hình 2 (trang 6)
+# 
+# LƯU Ý VỀ SERVER VÀ CAPACITY:
+# - 'servers': Không gian vật lý để đứng lấy thức ăn (serving space)
+# - 'capacity_K': Tổng không gian vật lý = không gian đứng lấy thức ăn + không gian đứng xếp hàng
+#   (capacity_K >= servers, phần còn lại là không gian xếp hàng)
 STATIONS = {
     'Meat': {
-        'servers': 5,            # 10 Tongs
-        'capacity_K': 10,         # (ASSUMED) Giới hạn không gian
+        'servers': 5,            # Không gian vật lý để đứng lấy thức ăn
+        'capacity_K': 10,         # Tổng không gian vật lý (bao gồm cả không gian xếp hàng)
         'discipline': 'SJF',      # SJF
         'avg_service_time':0.5   # (ASSUMED) 
     },
     'Seafood': {
-        'servers': 7,             # 5 Tongs
-        'capacity_K': 10,         # (ASSUMED)
+        'servers': 7,             # Không gian vật lý để đứng lấy thức ăn
+        'capacity_K': 10,         # Tổng không gian vật lý (bao gồm cả không gian xếp hàng)
         'discipline': 'SJF',      # SJF
         'avg_service_time': 0.3   # (ASSUMED)
     },
     'Dessert': {
-        'servers': 7,             # 7 Ladle
-        'capacity_K': 10,         # (ASSUMED)
+        'servers': 7,             # Không gian vật lý để đứng lấy thức ăn
+        'capacity_K': 10,         # Tổng không gian vật lý (bao gồm cả không gian xếp hàng)
         'discipline': 'ROS',      # ROS
         'avg_service_time': 0.5   # (ASSUMED)
     },
     'Fruit': {
-        'servers':10,              # Grab by hand (ASSUMED = 7)
-        'capacity_K': 10,         # (ASSUMED)
+        'servers':10,              # Không gian vật lý để đứng lấy thức ăn
+        'capacity_K': 10,         # Tổng không gian vật lý (bao gồm cả không gian xếp hàng)
         'discipline': 'ROS',      # ROS
         'avg_service_time': 0.3   # (ASSUMED)
     }
