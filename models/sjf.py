@@ -42,9 +42,10 @@ class SJFModel(BaseQueueSystem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         
-        # Dùng Container (thay vì Resource) để quản lý server thủ công
-        # Container cho phép lấy/trả server một cách linh hoạt
-        # capacity: Tổng số server, init: Số server ban đầu (tất cả đều rảnh)
+        # Dùng Container (thay vì Resource) để quản lý không gian phục vụ thủ công
+        # Container cho phép lấy/trả không gian phục vụ một cách linh hoạt
+        # capacity: Tổng số không gian vật lý để đứng lấy thức ăn (serving space)
+        # init: Số không gian ban đầu (tất cả đều rảnh)
         self.servers = simpy.Container(self.env, capacity=self.num_servers, init=self.num_servers)
         
         # Priority Queue (min-heap) để lưu khách hàng chờ
@@ -187,9 +188,9 @@ class SJFModel(BaseQueueSystem):
                 self.customer_arrival = self.env.event()  # Reset event
                 continue
 
-            # ========== BƯỚC 3: Lấy server rảnh ==========
-            # Chờ cho đến khi có ít nhất 1 server rảnh
-            # servers.get(1): Lấy 1 server từ pool (giảm số server rảnh đi 1)
+            # ========== BƯỚC 3: Lấy không gian phục vụ rảnh ==========
+            # Chờ cho đến khi có ít nhất 1 không gian phục vụ rảnh
+            # servers.get(1): Lấy 1 không gian phục vụ từ pool (giảm số không gian rảnh đi 1)
             yield self.servers.get(1)
             
             # ========== BƯỚC 4: Phục vụ khách ==========
@@ -301,7 +302,7 @@ class SJFModel(BaseQueueSystem):
         
         yield self.env.timeout(actual_service_time)
         
-        # Trả server
+        # Trả không gian phục vụ về pool
         yield self.servers.put(1)
         
         # Đánh thức server_manager (nếu nó đang chờ)

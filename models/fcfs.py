@@ -30,8 +30,8 @@ class FCFSModel(BaseQueueSystem):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         # SimPy.Resource tự động quản lý hàng đợi FCFS
-        # capacity: Số lượng server (kẹp gắp) có sẵn
-        # Resource tự động xếp hàng khách theo thứ tự đến và phân phối server
+        # capacity: Số lượng không gian vật lý để đứng lấy thức ăn (serving space)
+        # Resource tự động xếp hàng khách theo thứ tự đến và phân phối không gian phục vụ
         self.servers = simpy.Resource(self.env, capacity=self.num_servers)
 
     def serve(self, customer: Customer):
@@ -57,14 +57,14 @@ class FCFSModel(BaseQueueSystem):
             self.analyzer.record_wait_time(self.station_name, wait_time)
             return  # Khách rời đi, không được phục vụ
 
-        # ========== BƯỚC 2: Yêu cầu server và chờ ==========
+        # ========== BƯỚC 2: Yêu cầu không gian phục vụ và chờ ==========
         # with self.servers.request() as req:
-        #   - Tạo yêu cầu server (request)
-        #   - Nếu server rảnh → Được server ngay
-        #   - Nếu server bận → Tự động xếp hàng (FIFO - First In First Out)
-        #   - Khi có server → Tự động được phục vụ
+        #   - Tạo yêu cầu không gian phục vụ (request)
+        #   - Nếu không gian rảnh → Được phục vụ ngay
+        #   - Nếu không gian bận → Tự động xếp hàng (FIFO - First In First Out)
+        #   - Khi có không gian → Tự động được phục vụ
         with self.servers.request() as req:
-            # Chờ: được server (req) HOẶC hết thời gian kiên nhẫn (timeout)
+            # Chờ: được không gian phục vụ (req) HOẶC hết thời gian kiên nhẫn (timeout)
             # | : Toán tử OR trong SimPy - chờ một trong hai sự kiện xảy ra trước
             results = yield req | self.env.timeout(patience_remaining)
 
@@ -76,13 +76,13 @@ class FCFSModel(BaseQueueSystem):
             # ========== BƯỚC 3: Kiểm tra kết quả ==========
             if req not in results:
                 # req không có trong results → timeout xảy ra trước (hết kiên nhẫn)
-                # Khách đã chờ quá lâu mà vẫn chưa được server → Reneging
+                # Khách đã chờ quá lâu mà vẫn chưa được không gian phục vụ → Reneging
                 customer.reneged = True
                 self.analyzer.record_reneging_event(self.station_name)
                 return  # Khách hàng rời hàng đợi, không được phục vụ
 
-            # ========== BƯỚC 4: Đã được server phục vụ ==========
-            # req có trong results → Được server trước khi hết thời gian kiên nhẫn
+            # ========== BƯỚC 4: Đã được không gian phục vụ ==========
+            # req có trong results → Được không gian phục vụ trước khi hết thời gian kiên nhẫn
             
             # Lấy thời gian phục vụ riêng của khách này
             # Mỗi khách có service_time khác nhau (đã được tạo ngẫu nhiên khi khách đến)
@@ -114,8 +114,8 @@ class FCFSModel(BaseQueueSystem):
             actual_service_time = random.expovariate(1.0 / base_service_time) 
             
             # Chờ thời gian phục vụ (khách đang lấy thức ăn)
-            # Server được giữ trong suốt thời gian này
+            # Không gian phục vụ được giữ trong suốt thời gian này
             yield self.env.timeout(actual_service_time)
             
-            # Khi hết thời gian phục vụ, server tự động được giải phóng (do with statement)
-            # Server quay lại pool và có thể phục vụ khách tiếp theo
+            # Khi hết thời gian phục vụ, không gian phục vụ tự động được giải phóng (do with statement)
+            # Không gian phục vụ quay lại pool và có thể phục vụ khách tiếp theo

@@ -35,8 +35,10 @@ class ROSModel(BaseQueueSystem):
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Dùng Container (thay vì Resource) để quản lý server thủ công
-        # Container cho phép lấy/trả server một cách linh hoạt
+        # Dùng Container (thay vì Resource) để quản lý không gian phục vụ thủ công
+        # Container cho phép lấy/trả không gian phục vụ một cách linh hoạt
+        # capacity: Tổng số không gian vật lý để đứng lấy thức ăn (serving space)
+        # init: Số không gian ban đầu (tất cả đều rảnh)
         self.servers = simpy.Container(self.env, capacity=self.num_servers, init=self.num_servers)
         
         # Dùng list Python đơn giản (không cần priority queue như SJF)
@@ -137,9 +139,9 @@ class ROSModel(BaseQueueSystem):
                 self.customer_arrival = self.env.event()  # Reset event
                 continue
 
-            # ========== BƯỚC 3: Lấy server rảnh ==========
-            # Chờ cho đến khi có ít nhất 1 server rảnh
-            # servers.get(1): Lấy 1 server từ pool (giảm số server rảnh đi 1)
+            # ========== BƯỚC 3: Lấy không gian phục vụ rảnh ==========
+            # Chờ cho đến khi có ít nhất 1 không gian phục vụ rảnh
+            # servers.get(1): Lấy 1 không gian phục vụ từ pool (giảm số không gian rảnh đi 1)
             yield self.servers.get(1)
             
             # ========== BƯỚC 4: Phục vụ khách ==========
@@ -247,8 +249,8 @@ class ROSModel(BaseQueueSystem):
         # Chờ thời gian phục vụ (khách đang lấy thức ăn)
         yield self.env.timeout(actual_service_time)
         
-        # ========== BƯỚC 5: Trả server về pool ==========
-        # Phục vụ xong, trả server về pool (tăng số server rảnh lên 1)
+        # ========== BƯỚC 5: Trả không gian phục vụ về pool ==========
+        # Phục vụ xong, trả không gian phục vụ về pool (tăng số không gian rảnh lên 1)
         yield self.servers.put(1)
         
         # ========== BƯỚC 6: Đánh thức server_manager ==========
