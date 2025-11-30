@@ -15,8 +15,8 @@ UNTIL_TIME = 1000.0
 
 # (ASSUMED) Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
-    0: 12,  # Cổng "Arrived 0"
-    1: 10   # Cổng "Arrived 1"
+    0: 6,  # Cổng "Arrived 0"
+    1: 8   # Cổng "Arrived 1"
 }
 
 # (ASSUMED) Thời gian kiên nhẫn mặc định
