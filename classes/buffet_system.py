@@ -16,6 +16,10 @@ class BuffetSystem:
         self.analyzer = analyzer       # [cite: 204]
         self.config = config           # File config (sẽ tạo sau)
         
+        # Khởi tạo seed cho random để đảm bảo kết quả tái lập được
+        seed = getattr(config, 'RANDOM_SEED', 42)
+        random.seed(seed)
+        
         self.stations = {}             # Dict chứa các đối tượng FoodStation 
         self.arrival_rates = config.ARRIVAL_RATES # 
         self.prob_matrices = config.PROB_MATRICES # 
