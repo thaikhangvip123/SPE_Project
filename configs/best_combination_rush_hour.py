@@ -13,8 +13,8 @@ UNTIL_TIME = 1000.0
 
 # Tốc độ khách đến (khách/phút) cho mỗi cổng - Rush hour case (cao hơn)
 ARRIVAL_RATES = {
-    0: 18,  # Cổng "Arrived 0" - tăng từ 12 lên 18
-    1: 15   # Cổng "Arrived 1" - tăng từ 10 lên 15
+    0: 24,  # Cổng "Arrived 0" - tăng từ 12 lên 18
+    1: 26   # Cổng "Arrived 1" - tăng từ 10 lên 15
 }
 
 # Thời gian kiên nhẫn mặc định

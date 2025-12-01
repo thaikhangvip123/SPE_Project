@@ -5,15 +5,15 @@ File cấu hình: Tất cả quầy sử dụng FCFS (First Come First Served)
 """
 
 # Seed cho random để đảm bảo kết quả tái lập được
-RANDOM_SEED = 200
+RANDOM_SEED = 100
 
 # Thời gian mô phỏng tổng cộng (đơn vị: phút)
 UNTIL_TIME = 1000.0
 
 # Tốc độ khách đến (khách/phút) cho mỗi cổng
 ARRIVAL_RATES = {
-    0: 6,  # Cổng "Arrived 0"
-    1: 8   # Cổng "Arrived 1"
+    0: 12,  # Cổng "Arrived 0"
+    1: 10   # Cổng "Arrived 1"
 }
 
 # Thời gian kiên nhẫn mặc định

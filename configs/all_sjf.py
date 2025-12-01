@@ -5,7 +5,7 @@ File cấu hình: Tất cả quầy sử dụng SJF (Shortest Job First)
 """
 
 # Seed cho random để đảm bảo kết quả tái lập được
-RANDOM_SEED = 300
+RANDOM_SEED = 100
 
 # Thời gian mô phỏng tổng cộng (đơn vị: phút)
 UNTIL_TIME = 1000.0
